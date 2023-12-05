@@ -3,7 +3,7 @@ pragma solidity ^0.8.17;
 
 import {AccessListEntry, TransactionData} from "./Structs.sol";
 
-contract CallOverheadUtils {
+contract TransactionOverheadUtils {
     uint256 immutable CALLDATA_ZERO_BYTE_COST;
     uint256 immutable CALLDATA_NON_ZERO_BYTE_COST;
     uint256 immutable FLAT_TX_COST;

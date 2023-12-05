@@ -7,8 +7,8 @@ contract GasConsumer {
 
     function consumeGas(uint256 amount) public view {
         assembly {
-            // __invalid() selector
-            mstore(0, 0x4e0c4813)
+            // __invalid16834877() selector
+            mstore(0, 0x9b)
             pop(
                 staticcall(
                     // zero out if CONSUME_OVERHEAD > amount
@@ -26,7 +26,10 @@ contract GasConsumer {
         }
     }
 
-    function __invalid() external pure {
+    /**
+     * @dev Use an "optimized" selector to minimize gas impact of function dispatch
+     */
+    function __invalid16834877() external payable {
         assembly {
             invalid()
         }
