@@ -28,6 +28,12 @@ contract MeteringTest is MainnetMetering {
     }
 
     function testManualMetering() public manualMetering {
-        meterCallAndLog(address(0x123456), hex"000001", 0, true, "manual");
+        meterCallAndLog({
+            to: address(0x123456),
+            callData: hex"000001",
+            value: 0,
+            transaction: true,
+            message: "manual"
+        });
     }
 }
