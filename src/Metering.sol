@@ -24,17 +24,6 @@ contract Metering is TransactionOverheadUtils, GasConsumer, Test {
     {}
 
     /**
-     * @notice Pause gas metering at the beginning of a function
-     *         Due to forge quirks, requires resuming at the end of the function,
-     *         which incurs a ~3100 gas overhead
-     */
-    modifier manualMetering() virtual {
-        vm.pauseGasMetering();
-        _;
-        vm.resumeGasMetering();
-    }
-
-    /**
      * @notice Meter gas consumed by a function, and then pause gas metering
      */
     modifier metered() virtual {

@@ -27,7 +27,7 @@ contract MeteringTest is MainnetMetering {
         );
     }
 
-    function testManualMetering() public manualMetering {
+    function testManualMetering() public noGasMetering {
         meterCallAndLog({
             to: address(0x123456),
             callData: hex"000001",
