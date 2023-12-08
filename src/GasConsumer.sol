@@ -1,37 +1,65 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
+/**
+ * @title  GasConsumer
+ * @author emo.eth
+ * @notice Base contract that deploys a contract with a single INVALID opcode,
+ *         which, when called, will consume all gas forwarded in constant time.
+ *         Meant to be used in tests for manual gas accounting, which should
+ *         also warm the account before beginning manual accounting, or else
+ *         incur an extra 2500 gas for the first call.
+ */
 contract GasConsumer {
-    // approximate overhead of calling consumeGas, which may vary depending on compiler settings
-    uint256 public constant CONSUME_OVERHEAD = 200;
+    uint256 constant CONSUME_OVERHEAD = 160;
+    address immutable INVALID_ADDRESS;
 
-    function consumeGas(uint256 amount) public view {
+    constructor() {
+        address invalidAddress;
         assembly {
-            // __invalid16834877() selector
-            mstore(0, 0x9b)
-            pop(
-                staticcall(
-                    // zero out if CONSUME_OVERHEAD > amount
-                    mul(
-                        gt(amount, CONSUME_OVERHEAD),
-                        sub(amount, CONSUME_OVERHEAD)
-                    ),
-                    address(),
-                    0x1c,
-                    0x4,
-                    0,
-                    0
-                )
-            )
+            mstore(0, 0x60008060FE81159253F3)
+            invalidAddress := create(0, 0x16, 10)
+            calldatacopy(calldatasize(), calldatasize(), iszero(invalidAddress))
+        }
+        INVALID_ADDRESS = invalidAddress;
+    }
+
+    /**
+     * @notice warm the INVALID_ADDRESS so subsequent calls cost a flat 100 gas
+     */
+    function setUpGasConsumer() internal view {
+        address invalidAddress = INVALID_ADDRESS;
+        assembly ("memory-safe") {
+            pop(staticcall(0, invalidAddress, 0, 0, 0, 0))
         }
     }
 
     /**
-     * @dev Use an "optimized" selector to minimize gas impact of function dispatch
+     * @notice Consume an amount of gas in constant time. With optimizer
+     *         enabled, and INVALID_ADDRESS already warmed, it should be
+     *         accurate within 33 gas units if the amount is greater than
+     *         CONSUME_OVERHEAD (160 gas units)
+     *         Low runs + no IR will over-spend by a max of 33 gas units
+     *         High runs + IR will under-spend by a max of 33 gas units
+     * @param amount The amount of gas to consume, += 33 depending on compiler
+     *               settings
      */
-    function __invalid16834877() external payable {
-        assembly {
-            invalid()
+    function consumeGas(uint256 amount) internal view {
+        address invalidAddress = INVALID_ADDRESS;
+        assembly ("memory-safe") {
+            pop(
+                staticcall( // zero out if CONSUME_OVERHEAD > amount
+                    mul(
+                        gt(amount, CONSUME_OVERHEAD),
+                        sub(amount, CONSUME_OVERHEAD)
+                    ),
+                    invalidAddress,
+                    0,
+                    0,
+                    0,
+                    0
+                )
+            )
         }
     }
 }

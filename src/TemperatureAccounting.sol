@@ -4,6 +4,14 @@ pragma solidity ^0.8.17;
 import {Test, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 
+/**
+ * @title TemperatureAccounting
+ * @author emo.eth
+ * @notice Helpers for manually accounting for gas accounting differences based
+ *         on account and temperature "warmth."
+ *         TODO: use immutables to allow configuring for different networks and
+ *         hard forks.
+ */
 contract TemperatureAccounting is Test {
     bytes32 immutable TEMPERATURE_ACCOUNTING_SLOT =
         keccak256("TemperatureAccounting");
@@ -95,7 +103,6 @@ contract TemperatureAccounting is Test {
         SlotTemperatureMapping storage slotMap = getSlotMap();
         address accessedAccount = access.account;
         bytes32 accessedSlot = access.slot;
-        vm.breakpoint("a");
         SlotStatus storage slotStatus =
             slotMap.slotStatus[accessedAccount][accessedSlot];
         // don't do anything if access was reverted
@@ -237,7 +244,6 @@ contract TemperatureAccounting is Test {
         SlotTemperatureMapping storage slotMap = getSlotMap();
         address accessedAccount = access.account;
         bytes32 accessedSlot = access.slot;
-        vm.breakpoint("b");
         SlotStatus storage slotStatus =
             slotMap.slotStatus[accessedAccount][accessedSlot];
         // if doing an SLOAD, just account for the cold surcharge, and do nothing with refunds

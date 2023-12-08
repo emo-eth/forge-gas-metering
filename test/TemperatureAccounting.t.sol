@@ -105,6 +105,28 @@ contract TemperatureAccountingTest is Test {
         assertEq(measurements.adjustedGas, 7600, "adjustedGas");
     }
 
+    function testHugeRefund() public {
+        for (uint256 i = 0; i < 100; i++) {
+            writer.write({slot: bytes32(i), newVal: bytes32(uint256(1))});
+        }
+        Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
+        target.preprocessAccesses(diffs);
+        vm.startStateDiffRecording();
+        for (uint256 i = 0; i < 100; i++) {
+            writer.write({slot: bytes32(i), newVal: bytes32(uint256(0))});
+        }
+        diffs = vm.stopAndReturnStateDiff();
+        assertEq(diffs.length, 100, "diffs.length");
+        TemperatureAccounting.GasMeasurements memory measurements =
+            target.processAccountAccesses(diffs);
+        emit log_named_uint("evm gas", measurements.evmGas);
+        emit log_named_uint("adjusted gas", measurements.adjustedGas);
+        emit log_named_int("evmRefund", measurements.evmRefund);
+        emit log_named_int("adjustedRefund", measurements.adjustedRefund);
+        // assertEq(measurements.evmGas, 200, "evmGas");
+        // assertEq(measurements.adjustedGas, 7600, "adjustedGas");
+    }
+
     function emptyAccountAccess()
         internal
         pure
