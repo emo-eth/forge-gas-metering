@@ -18,7 +18,7 @@ contract GasConsumer {
         address invalidAddress;
         assembly {
             mstore(0, 0x60008060FE81159253F3)
-            invalidAddress := create(0, 0x16, 10)
+            invalidAddress := create2(0, 0x16, 10, 0)
             calldatacopy(calldatasize(), calldatasize(), iszero(invalidAddress))
         }
         INVALID_ADDRESS = invalidAddress;

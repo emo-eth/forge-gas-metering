@@ -181,14 +181,27 @@ contract TemperatureAccounting is Test {
 
         evmGas = adjustedGas = 100;
 
+        // call and selfdestruct must pay extra gas for uninitialized accounts
+        if (
+            (
+                access.kind == VmSafe.AccountAccessKind.Call
+                    || access.kind == VmSafe.AccountAccessKind.SelfDestruct
+            )
+        ) {
+            // struct already accounts for whether or not account is initialized, including due to reverts
+            if (access.value > 0 && !access.initialized) {
+                adjustedGas += 25_000; // COST_UNINITIALIZED_ACCOUNT_SEND_VALUE
+            }
+        }
+
         if (
             (accountStatus.needsWarmAdjustment || !accountStatus.isWarm)
                 && !isPrecompile(access.account)
         ) {
+            // create and resume do not pay extra gas for cold accounts
             if (
                 !(
                     access.kind == VmSafe.AccountAccessKind.Create
-                        || access.kind == VmSafe.AccountAccessKind.SelfDestruct
                         || access.kind == VmSafe.AccountAccessKind.Resume
                 )
             ) {
@@ -301,12 +314,19 @@ contract TemperatureAccounting is Test {
         );
     }
 
+    /**
+     * @notice Calculate the base dynamic gas for an SSTORE. Virtual to allow overriding for different networks and hard forks.
+     * @param warm Whether the slot is warm.
+     * @param originalValue The original (pre-tx) value of the slot.
+     * @param currentValue The current value of the slot.
+     * @param newValue The new value of the slot.
+     */
     function calcSstoreBaseDynamicGas(
         bool warm,
         bytes32 originalValue,
         bytes32 currentValue,
         bytes32 newValue
-    ) public pure returns (uint256 baseDynamicGas) {
+    ) public pure virtual returns (uint256 baseDynamicGas) {
         if (newValue == currentValue) {
             if (warm) {
                 baseDynamicGas = 100; // COST_WARM_SSTORE_SAME_VALUE;
@@ -325,12 +345,19 @@ contract TemperatureAccounting is Test {
         baseDynamicGas += (warm) ? 0 : 2100; // COST_SSTORE_COLD_ACCESS;
     }
 
+    /**
+     * @notice Calculate the gas refund for an SSTORE. Virtual to allow overriding for different networks and hard forks.
+     * @param warm Whether the slot is warm.
+     * @param originalValue The original (pre-tx) value of the slot.
+     * @param currentValue The current value of the slot.
+     * @param newValue The new value of the slot.
+     */
     function calcSstoreGasRefund(
         bool warm,
         bytes32 originalValue,
         bytes32 currentValue,
         bytes32 newValue
-    ) public pure returns (int256 gasRefund) {
+    ) public pure virtual returns (int256 gasRefund) {
         if (newValue != currentValue) {
             if (currentValue == originalValue) {
                 if (originalValue != 0 && newValue == 0) {
@@ -361,7 +388,11 @@ contract TemperatureAccounting is Test {
         }
     }
 
-    function isPrecompile(address account) public pure returns (bool) {
+    /**
+     * @notice Check if an account is a precompile. Override with different logic depending on network and hard fork.
+     * @param account The account to check.
+     */
+    function isPrecompile(address account) public pure virtual returns (bool) {
         return account < address(10) && account > address(0);
     }
 }
