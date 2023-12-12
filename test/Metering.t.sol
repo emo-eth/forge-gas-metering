@@ -8,7 +8,8 @@ contract MeteringTest is MainnetMetering {
     uint256 thing;
 
     function setUp() public {
-        vm.pauseGasMetering();
+        setUpMetering();
+        verboseMetering = true;
     }
 
     function testCalldataCosts() public {
@@ -35,11 +36,7 @@ contract MeteringTest is MainnetMetering {
             transaction: true,
             message: "manual"
         });
-        uint256 x;
-        assembly {
-            x := gaslimit()
-        }
-        emit log_named_uint("gaslimit", x - gasleft());
+
         vm.resumeGasMetering();
     }
 }

@@ -5,6 +5,7 @@ libs = ["lib"]
 optimizer = true
 optimizer_runs = 9_999_999
 # via_ir = true
+# evm_version = 'shanghai'
 
 [fuzz]
 runs = 1024

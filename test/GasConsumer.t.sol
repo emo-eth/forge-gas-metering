@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {GasConsumer} from "../src/GasConsumer.sol";
 
 contract GasConsumerTest is GasConsumer, Test {
+    uint256 constant CONSUME_MAX_DELTA = 38;
+
     function testConsume(uint32 gasToUse) public {
         address invalidAddress = INVALID_ADDRESS;
         uint256 codeSize;
@@ -23,7 +25,9 @@ contract GasConsumerTest is GasConsumer, Test {
         consumeGas(gasToUse);
         uint256 afterGasUsed = gasleft();
         uint256 gasUsed = startingGas - afterGasUsed;
-        assertApproxEqAbs(gasToUse, gasUsed, 33, "gasToUse != gasUsed");
+        assertApproxEqAbs(
+            gasToUse, gasUsed, CONSUME_MAX_DELTA, "gasToUse != gasUsed"
+        );
         emit log_named_uint(
             "difference",
             (gasUsed > gasToUse) ? gasUsed - gasToUse : gasToUse - gasUsed

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.17;
 
 import {Vm, Test} from "forge-std/Test.sol";
-import {TemperatureAccounting} from "src/./TemperatureAccounting.sol";
+import {AccessAccounting} from "src/./AccessAccounting.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {AccessCosts, GasMeasurements} from "src/./Structs.sol";
 
@@ -46,14 +46,14 @@ contract Writer {
     }
 }
 
-contract TemperatureAccountingTest is Test {
+contract AccessAccountingTest is Test {
     Writer writer;
-    TemperatureAccounting target;
+    AccessAccounting target;
 
     function setUp() public {
         vm.startStateDiffRecording();
         writer = new Writer();
-        target = new TemperatureAccounting(
+        target = new AccessAccounting(
             AccessCosts({
                 baseAccessCost: MAINNET_BASE_ACCESS_COST,
                 costColdAccountAccess: MAINNET_COST_COLD_ACCOUNT_ACCESS,

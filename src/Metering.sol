@@ -11,18 +11,34 @@ import {
 import {Test, Vm} from "forge-std/Test.sol";
 import {TransactionOverheadUtils} from "./TransactionOverheadUtils.sol";
 import {GasConsumer} from "./GasConsumer.sol";
-import {TemperatureAccounting} from "./TemperatureAccounting.sol";
+import {AccessAccounting} from "./AccessAccounting.sol";
 import {RefundMath} from "./RefundMath.sol";
 
+/**
+ * @title Metering
+ * @author emo.eth
+ * @notice Metering utils for calculating gas consumed by an external call, as
+ *         if it were executed as a solo transaction by the EVM.
+ *         To measure gas usage of an external function call:
+ *         - Call `vm.pauseGasMetering` before *any* test setup is done, ie, as
+ *           the first line of the `setUp` function.
+ *         - Do test setup as normal
+ *         - Prepare all calldata
+ *         - Call `meterCallAndLog` or `meterCall` with the target, calldata,
+ *           and value
+ *         - Call `vm.resumeGasMetering` afterwards to deal with annoying
+ *           Foundry bugs
+ *
+ */
 contract Metering is
     TransactionOverheadUtils,
     GasConsumer,
-    TemperatureAccounting,
+    AccessAccounting,
     RefundMath,
     Test
 {
-    int256 constant METER_OVERHEAD = 22;
-    int256 constant TEST_OVERHEAD = 6352;
+    int256 constant METER_OVERHEAD = 31;
+    int256 constant TEST_OVERHEAD = 6344;
     uint256 constant PAUSE_GAS_METERING = 0xd1a5b36f;
     uint256 constant RESUME_GAS_METERING = 0x2bcd50e0;
     uint256 constant START_STATE_DIFF = 0xcf22e3c9;
@@ -32,10 +48,7 @@ contract Metering is
     constructor(
         NetworkTxCosts memory networkTxCosts,
         AccessCosts memory accessCosts
-    )
-        TransactionOverheadUtils(networkTxCosts)
-        TemperatureAccounting(accessCosts)
-    {}
+    ) TransactionOverheadUtils(networkTxCosts) AccessAccounting(accessCosts) {}
 
     /**
      * @notice Meter gas consumed by a function, and then pause gas metering
@@ -49,6 +62,11 @@ contract Metering is
     modifier manuallyMetered() virtual {
         _;
         vm.resumeGasMetering();
+    }
+
+    function setUpMetering() internal {
+        vm.pauseGasMetering();
+        setUpGasConsumer();
     }
 
     /**
@@ -158,10 +176,6 @@ contract Metering is
             emit log_named_uint("makeup gas", makeup);
         }
         consumeAndMeterGas(makeup);
-        return (
-            observedGas + makeup + uint256(METER_OVERHEAD)
-                + uint256(TEST_OVERHEAD),
-            data
-        );
+        return (observedGas + makeup + uint256(TEST_OVERHEAD), data);
     }
 }

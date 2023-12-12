@@ -6,14 +6,13 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {AccessCosts, GasMeasurements} from "./Structs.sol";
 
 /**
- * @title TemperatureAccounting
+ * @title AccessAccounting
  * @author emo.eth
  * @notice Helpers for manually accounting for gas accounting differences based
  *         on account and storage slot "warmth."
  */
-contract TemperatureAccounting {
-    bytes32 immutable TEMPERATURE_ACCOUNTING_SLOT =
-        keccak256("TemperatureAccounting");
+contract AccessAccounting {
+    bytes32 immutable ACCESS_ACCOUNTING_SLOT = keccak256("AccessAccounting");
     int256 immutable COST_BASE_ACCESS;
     int256 immutable COST_COLD_ACCOUNT_ACCESS;
     int256 immutable COST_COLD_SLOAD;
@@ -85,7 +84,7 @@ contract TemperatureAccounting {
         returns (SlotTemperatureMapping storage)
     {
         TemperatureStorage storage tempSlot;
-        bytes32 slot = TEMPERATURE_ACCOUNTING_SLOT;
+        bytes32 slot = ACCESS_ACCOUNTING_SLOT;
         SlotTemperatureMapping storage slotMap;
         assembly {
             tempSlot.slot := slot
@@ -221,6 +220,9 @@ contract TemperatureAccounting {
             evmGas += (accountStatus.needsWarmAdjustment)
                 ? int256(0)
                 : COST_COLD_ACCOUNT_ACCESS;
+            evmGas += (access.value > 0 && !access.initialized)
+                ? COST_INITIALIZE_ACCOUNT
+                : int256(0);
             // warm up target account
             accountStatus.needsWarmAdjustment = false;
             accountStatus.isWarm = true;
@@ -386,20 +388,20 @@ contract TemperatureAccounting {
     ) public view virtual returns (int256 baseDynamicGas) {
         if (newValue == currentValue) {
             if (warm) {
-                baseDynamicGas = COST_BASE_ACCESS; // COST_WARM_SSTORE_SAME_VALUE;
+                baseDynamicGas = COST_BASE_ACCESS;
             } else {
-                baseDynamicGas = COST_BASE_ACCESS; // COST_COLD_SSTORE_SAME_VALUE;
+                baseDynamicGas = COST_BASE_ACCESS;
             }
         } else if (currentValue == originalValue) {
             if (originalValue == 0) {
-                baseDynamicGas = COST_SSTORE_CHANGE_ORIGINAL_ZERO; // COST_SSTORE_CHANGE_ORIGINAL_ZERO;
+                baseDynamicGas = COST_SSTORE_CHANGE_ORIGINAL_ZERO;
             } else {
-                baseDynamicGas = COST_SSTORE_CHANGE_ORIGINAL_NONZERO; // COST_SSTORE_CHANGE_ORIGINAL_NONZERO;
+                baseDynamicGas = COST_SSTORE_CHANGE_ORIGINAL_NONZERO;
             }
         } else {
-            baseDynamicGas = COST_SSTORE_CHANGE_NONORIGINAL; // COST_SSTORE_CHANGE_NONORIGINAL;
+            baseDynamicGas = COST_SSTORE_CHANGE_NONORIGINAL;
         }
-        baseDynamicGas += (warm) ? int256(0) : int256(COST_COLD_SSTORE); // COST_SSTORE_COLD_ACCESS;
+        baseDynamicGas += (warm) ? int256(0) : int256(COST_COLD_SSTORE);
     }
 
     /**
@@ -418,28 +420,28 @@ contract TemperatureAccounting {
         if (newValue != currentValue) {
             if (currentValue == originalValue) {
                 if (originalValue != 0 && newValue == 0) {
-                    gasRefund += REFUND_RESTORE_NONZERO_SLOT_TO_ZERO; //4800; // REFUND_RESTORE_SLOT_NONZERO;
+                    gasRefund += REFUND_RESTORE_NONZERO_SLOT_TO_ZERO;
                 }
             } else if (originalValue != 0) {
                 if (currentValue == 0) {
-                    gasRefund -= REFUND_TEMP_ZERO_TO_NONZERO; // REFUND_DIRTY_TRANSIENT_ZERO;
+                    gasRefund -= REFUND_TEMP_ZERO_TO_NONZERO;
                 } else if (newValue == 0) {
-                    gasRefund += REFUND_NONZERO_TO_ZERO; // REFUND_CLEAR_DIRTY_SLOT;
+                    gasRefund += REFUND_NONZERO_TO_ZERO;
                 }
             }
         }
         if (newValue == originalValue) {
             if (originalValue == 0) {
                 if (warm) {
-                    gasRefund += REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_WARM; // REFUND_WARM_RESTORE_SLOT_ORIGINAL_VALUE_ZERO;
+                    gasRefund += REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_WARM;
                 } else {
-                    gasRefund += REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_COLD; // REFUND_COLD_RESTORE_SLOT_ORIGINAL_VALUE_ZERO;
+                    gasRefund += REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_COLD;
                 }
             } else {
                 if (warm) {
-                    gasRefund += REFUND_RESTORE_ORIGINAL_NONZERO_WARM; // REFUND_WARM_RESTORE_SLOT_ORIGINAL_VALUE_NONZERO;
+                    gasRefund += REFUND_RESTORE_ORIGINAL_NONZERO_WARM;
                 } else {
-                    gasRefund += REFUND_RESTORE_ORIGINAL_NONZERO_COLD; // REFUND_COLD_RESTORE_SLOT_ORIGINAL_VALUE_NONZERO;
+                    gasRefund += REFUND_RESTORE_ORIGINAL_NONZERO_COLD;
                 }
             }
         }

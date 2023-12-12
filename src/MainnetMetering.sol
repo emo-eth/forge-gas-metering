@@ -26,6 +26,11 @@ import {
     MAINNET_REFUND_RESTORE_ORIGINAL_NON_ZERO_COLD
 } from "./Constants.sol";
 
+/**
+ * @title MainnetMetering
+ * @author emo.eth
+ * @notice Gas metering utils configured for Ethereum mainnet.
+ */
 contract MainnetMetering is
     Metering(
         NetworkTxCosts({
