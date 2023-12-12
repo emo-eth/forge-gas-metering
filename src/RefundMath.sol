@@ -14,6 +14,11 @@ contract RefundMath {
         int256 evmRefund,
         int256 adjustedRefund
     ) internal pure virtual returns (uint256 gasToBurn) {
+        console2.log("target gas spend:");
+        console2.logInt(
+            measuredGas + adjustedGas - evmGas - adjustedRefund
+                + callOverheadGas
+        );
         // first, assume all of of evmRefund will be credited after tx
         // Gas_total = Gas_measured + Gas_burn + Gas_overhead
         // Gas_final = Gas_total - Refund_evm
