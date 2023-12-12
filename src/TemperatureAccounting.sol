@@ -8,24 +8,25 @@ import {VmSafe} from "forge-std/Vm.sol";
  * @title TemperatureAccounting
  * @author emo.eth
  * @notice Helpers for manually accounting for gas accounting differences based
- *         on account and temperature "warmth."
+ *         on account and storage slot "warmth."
  *         TODO: use immutables to allow configuring for different networks and
  *         hard forks.
  */
-contract TemperatureAccounting is Test {
+contract TemperatureAccounting {
     bytes32 immutable TEMPERATURE_ACCOUNTING_SLOT =
         keccak256("TemperatureAccounting");
-    uint256 immutable COST_DIFF_COLD_ACCOUNT_ACCESS = 2500; // 2600 - 100 = 2500
-    uint256 immutable COST_DIFF_COLD_SLOAD = 2000; // 2100 - 100 = 2100
-    uint256 immutable COST_DIFF_DIRTY_WRITE; //
-    uint256 immutable COST_DIFF_WARM_WRITE_DIFF;
-    uint256 immutable REFUND_RESTORE_SLOT_ORIGINAL_VALUE;
-    uint256 immutable REFUND_RESTORE_SLOT_ZERO_VALUE;
-    uint256 immutable REFUND_DELETE_SLOT;
+    int256 immutable COST_DIFF_COLD_ACCOUNT_ACCESS = 2500; // 2600 - 100 = 2500
+    int256 immutable COST_DIFF_COLD_SLOAD = 2000; // 2100 - 100 = 2100
+    int256 immutable COST_DIFF_DIRTY_WRITE;
+    int256 immutable COST_DIFF_WARM_WRITE_DIFF;
+    int256 immutable REFUND_RESTORE_SLOT_ORIGINAL_VALUE;
+    int256 immutable REFUND_RESTORE_SLOT_ZERO_VALUE;
+    int256 immutable REFUND_DELETE_SLOT;
+    bool seenTarget;
 
     struct GasMeasurements {
-        uint256 evmGas;
-        uint256 adjustedGas;
+        int256 evmGas;
+        int256 adjustedGas;
         int256 evmRefund;
         int256 adjustedRefund;
     }
@@ -132,21 +133,22 @@ contract TemperatureAccounting is Test {
             (test) ? slotStatus.testOriginalValue : slotStatus.evmOriginalValue;
     }
 
-    function processAccountAccesses(Vm.AccountAccess[] memory accesses)
-        public
-        returns (GasMeasurements memory measurements)
-    {
-        uint256 evmGas;
-        uint256 adjustedGas;
+    function processAccountAccesses(
+        address target,
+        Vm.AccountAccess[] memory accesses
+    ) public returns (GasMeasurements memory measurements) {
+        seenTarget = false;
+        int256 evmGas;
+        int256 adjustedGas;
         int256 evmRefund;
         int256 adjustedRefund;
         for (uint256 i; i < accesses.length; ++i) {
             (
-                uint256 evmGas_,
-                uint256 adjustedGas_,
+                int256 evmGas_,
+                int256 adjustedGas_,
                 int256 evmRefund_,
                 int256 adjustedRefund_
-            ) = processAccountAccess(accesses[i]);
+            ) = processAccountAccess(target, accesses[i]);
             evmGas += evmGas_;
             adjustedGas += adjustedGas_;
             evmRefund += evmRefund_;
@@ -165,11 +167,14 @@ contract TemperatureAccounting is Test {
      *               As of London hard fork, the EVM limits refunds to 1/5 tx cost, and only gives refunds for SSTOREs.
      * @param access The account-level access to process, including all storage accesses.
      */
-    function processAccountAccess(Vm.AccountAccess memory access)
+    function processAccountAccess(
+        address target,
+        Vm.AccountAccess memory access
+    )
         public
         returns (
-            uint256 evmGas,
-            uint256 adjustedGas,
+            int256 evmGas,
+            int256 adjustedGas,
             int256 evmRefund,
             int256 adjustedRefund
         )
@@ -179,53 +184,71 @@ contract TemperatureAccounting is Test {
         AccountStatus storage accountStatus =
             slotMap.accountStatus[accessedAccount];
 
-        evmGas = adjustedGas = 100;
+        if (access.account == target && !seenTarget) {
+            seenTarget = true;
+            // if this is the first time the target account is accessed,
+            // do not charge any gas, since that will be accounted for by the
+            // tx-level overhead.
+            // todo: make this configurable?
+            adjustedGas = 0;
+            // however, assume the evm charges standard gas for the call;
+            // the difference will be accounted for by the burned makeup gas.
+            evmGas =
+                (accountStatus.needsWarmAdjustment) ? int256(100) : int256(2600);
+        } else {
+            evmGas = adjustedGas = 100;
 
-        // call and selfdestruct must pay extra gas for uninitialized accounts
-        if (
-            (
-                access.kind == VmSafe.AccountAccessKind.Call
-                    || access.kind == VmSafe.AccountAccessKind.SelfDestruct
-            )
-        ) {
-            // struct already accounts for whether or not account is initialized, including due to reverts
-            if (access.value > 0 && !access.initialized) {
-                adjustedGas += 25_000; // COST_UNINITIALIZED_ACCOUNT_SEND_VALUE
-            }
-        }
-
-        if (
-            (accountStatus.needsWarmAdjustment || !accountStatus.isWarm)
-                && !isPrecompile(access.account)
-        ) {
-            // create and resume do not pay extra gas for cold accounts
+            // call and selfdestruct must pay extra gas for uninitialized accounts
             if (
-                !(
-                    access.kind == VmSafe.AccountAccessKind.Create
-                        || access.kind == VmSafe.AccountAccessKind.Resume
+                (
+                    access.kind == VmSafe.AccountAccessKind.Call
+                        || access.kind == VmSafe.AccountAccessKind.SelfDestruct
                 )
             ) {
-                // TODO: account for initialized status
-                adjustedGas += COST_DIFF_COLD_ACCOUNT_ACCESS;
+                // struct already accounts for whether or not account is initialized, including due to reverts
+                if (access.value > 0 && !access.initialized) {
+                    adjustedGas += 25_000; // COST_UNINITIALIZED_ACCOUNT_SEND_VALUE
+                    evmGas += 25_000;
+                }
             }
-            // If this is the first time the account is accessed, and the
-            // callframe did not revert, or if the account was the target of a
-            // CREATE, mark it as warmed and reset needsWarmAdjusment.
-            // TODO: technically, only a CREATE from a non-reverted frame should warm the account
-            // eg, if a CREATE reverts _within_ a reverting frame, the account should not be warmed (I think)
+
             if (
-                !access.reverted
-                    || access.kind == VmSafe.AccountAccessKind.Create
+                (accountStatus.needsWarmAdjustment || !accountStatus.isWarm)
+                    && !isPrecompile(access.account)
             ) {
-                accountStatus.needsWarmAdjustment = false;
-                accountStatus.isWarm = true;
+                // create and resume do not pay extra gas for cold accounts
+                if (
+                    !(
+                        access.kind == VmSafe.AccountAccessKind.Create
+                            || access.kind == VmSafe.AccountAccessKind.Resume
+                    )
+                ) {
+                    adjustedGas += COST_DIFF_COLD_ACCOUNT_ACCESS;
+                    // only add cold surcharge to evmGas if the account was not warmed by set-up
+                    evmGas += (accountStatus.needsWarmAdjustment)
+                        ? int256(0)
+                        : COST_DIFF_COLD_ACCOUNT_ACCESS;
+                }
+                // If this is the first time the account is accessed, and the
+                // callframe did not revert, or if the account was the target of a
+                // CREATE, mark it as warmed and reset needsWarmAdjusment.
+                // TODO: technically, only a CREATE from a non-reverted frame should warm the account
+                // eg, if a CREATE reverts _within_ a reverting frame, the account should not be warmed (I think)
+                if (
+                    !access.reverted
+                        || access.kind == VmSafe.AccountAccessKind.Create
+                ) {
+                    accountStatus.needsWarmAdjustment = false;
+                    accountStatus.isWarm = true;
+                }
             }
         }
+
         Vm.StorageAccess[] memory storageAccesses = access.storageAccesses;
         for (uint256 i; i < storageAccesses.length; ++i) {
             (
-                uint256 slotEvmGas,
-                uint256 slotAdjustedGas,
+                int256 slotEvmGas,
+                int256 slotAdjustedGas,
                 int256 slotEvmRefund,
                 int256 slotAdjustedRefund
             ) = processStorageAccess(storageAccesses[i]);
@@ -248,8 +271,8 @@ contract TemperatureAccounting is Test {
     function processStorageAccess(Vm.StorageAccess memory access)
         public
         returns (
-            uint256 evmGas,
-            uint256 adjustedGas,
+            int256 evmGas,
+            int256 adjustedGas,
             int256 evmRefund,
             int256 adjustedRefund
         )
@@ -264,6 +287,10 @@ contract TemperatureAccounting is Test {
             evmGas = adjustedGas = 100;
             if (slotStatus.needsWarmAdjustment || !slotStatus.isWarm) {
                 adjustedGas += COST_DIFF_COLD_SLOAD;
+                // only add cold surcharge to evmGas if the slot was not warmed by set-up
+                evmGas += (slotStatus.needsWarmAdjustment)
+                    ? int256(0)
+                    : COST_DIFF_COLD_SLOAD;
                 if (!access.reverted) {
                     slotStatus.needsWarmAdjustment = false;
                     slotStatus.isWarm = true;
@@ -273,6 +300,7 @@ contract TemperatureAccounting is Test {
             // for SSTOREs, calculate both the gas and refund for both the EVM state and the idealized test state
 
             // use helper to get original values, as they may not have been recorded during preprocessing of test setup
+            // TODO: support pre-loaded state with forks/vm.loadAllocs etc
             bytes32 evmOriginalValue = getOriginalSlotValue({
                 slotStatus: slotStatus,
                 access: access,
@@ -305,7 +333,7 @@ contract TemperatureAccounting is Test {
         bytes32 originalValue,
         bytes32 currentValue,
         bytes32 newValue
-    ) public pure returns (uint256 baseDynamicGas, int256 gasRefund) {
+    ) public pure returns (int256 baseDynamicGas, int256 gasRefund) {
         return (
             calcSstoreBaseDynamicGas(
                 warm, originalValue, currentValue, newValue
@@ -326,7 +354,7 @@ contract TemperatureAccounting is Test {
         bytes32 originalValue,
         bytes32 currentValue,
         bytes32 newValue
-    ) public pure virtual returns (uint256 baseDynamicGas) {
+    ) public pure virtual returns (int256 baseDynamicGas) {
         if (newValue == currentValue) {
             if (warm) {
                 baseDynamicGas = 100; // COST_WARM_SSTORE_SAME_VALUE;
@@ -342,7 +370,7 @@ contract TemperatureAccounting is Test {
         } else {
             baseDynamicGas = 100; // COST_SSTORE_CHANGE_NONORIGINAL;
         }
-        baseDynamicGas += (warm) ? 0 : 2100; // COST_SSTORE_COLD_ACCESS;
+        baseDynamicGas += (warm) ? int256(0) : int256(2100); // COST_SSTORE_COLD_ACCESS;
     }
 
     /**

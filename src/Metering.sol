@@ -2,11 +2,27 @@
 pragma solidity ^0.8.17;
 
 import {AccessListEntry, TransactionData} from "./Structs.sol";
-import {Test} from "forge-std/Test.sol";
+import {Test, Vm} from "forge-std/Test.sol";
 import {TransactionOverheadUtils} from "./TransactionOverheadUtils.sol";
 import {GasConsumer} from "./GasConsumer.sol";
+import {TemperatureAccounting} from "./TemperatureAccounting.sol";
+import {RefundMath} from "./RefundMath.sol";
 
-contract Metering is TransactionOverheadUtils, GasConsumer, Test {
+contract Metering is
+    TransactionOverheadUtils,
+    GasConsumer,
+    TemperatureAccounting,
+    RefundMath,
+    Test
+{
+    int256 constant METER_OVERHEAD = 22;
+    int256 constant TEST_OVERHEAD = 6352;
+    uint256 constant PAUSE_GAS_METERING = 0xd1a5b36f;
+    uint256 constant RESUME_GAS_METERING = 0x2bcd50e0;
+    uint256 constant START_STATE_DIFF = 0xcf22e3c9;
+    uint256 constant VM = 0x007109709ecfa91a80626ff3989d68f67f5b1dd12d;
+    bool verboseMetering;
+
     constructor(
         uint256 calldataZeroByteCost,
         uint256 calldataNonZeroByteCost,
@@ -32,12 +48,17 @@ contract Metering is TransactionOverheadUtils, GasConsumer, Test {
         vm.pauseGasMetering();
     }
 
+    modifier manuallyMetered() virtual {
+        _;
+        vm.resumeGasMetering();
+    }
+
     /**
      * @notice Add approximately gasCost units of gas to Foundry's gas meter.
      *         Resumes and then pauses gas metering.
      * @param gasCost The total gas cost to meter
      */
-    function meterGas(uint256 gasCost) internal metered {
+    function consumeAndMeterGas(uint256 gasCost) internal metered {
         consumeGas(gasCost);
     }
 
@@ -84,22 +105,26 @@ contract Metering is TransactionOverheadUtils, GasConsumer, Test {
         uint256 overheadGasCost =
             (transaction) ? getCallOverhead(to, callData) : 0;
 
+        Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
+        preprocessAccesses(diffs);
+
         // track evm gas usage
-        uint256 startingGas = gasleft();
-        uint256 afterGas;
+        uint256 observedGas;
         uint256 returndataSize;
-        bool succ;
         assembly ("memory-safe") {
-            succ :=
+            // call cheatcodes in assembly to avoid solc inserting unnecessary EXTCODESIZE checks
+            mstore(0, START_STATE_DIFF)
+            pop(call(gas(), VM, 0, 0x1c, 4, 0, 0))
+            mstore(0, RESUME_GAS_METERING)
+            pop(call(gas(), VM, 0, 0x1c, 4, 0, 0))
+            let startingGas := gas()
+            let succ :=
                 call(gas(), to, value, add(callData, 0x20), mload(callData), 0, 0)
-        }
+            let afterGas := gas()
+            mstore(0, PAUSE_GAS_METERING)
+            pop(call(gas(), VM, 0, 0x1c, 4, 0, 0))
+            observedGas := sub(startingGas, afterGas)
 
-        // compiler seems to do some weird caching when this is done in assembly
-        afterGas = gasleft();
-
-        // revert if call failed or else copy returndata
-        assembly ("memory-safe") {
-            // TODO: how will this work with expectRevert?
             if iszero(succ) {
                 returndatacopy(0, 0, returndatasize())
                 revert(0, returndatasize())
@@ -112,9 +137,33 @@ contract Metering is TransactionOverheadUtils, GasConsumer, Test {
             returndatacopy(add(data, 0x20), 0, returndatasize())
         }
 
-        // consume gas
-        uint256 gasUsed = startingGas - afterGas + overheadGasCost;
-        meterGas(gasUsed);
-        return (gasUsed, data);
+        diffs = vm.stopAndReturnStateDiff();
+        GasMeasurements memory measurements = processAccountAccesses(to, diffs);
+        uint256 makeup = calcMakeupGasToBurn(
+            int256(overheadGasCost),
+            int256(observedGas),
+            int256(measurements.evmGas),
+            int256(measurements.adjustedGas - METER_OVERHEAD - TEST_OVERHEAD),
+            measurements.evmRefund,
+            measurements.adjustedRefund
+        );
+
+        if (verboseMetering) {
+            emit log_named_uint("tx overhead gas", overheadGasCost);
+            emit log_named_uint("observed gas", observedGas);
+            emit log_named_int(
+                "adjusted account + storage gas", measurements.adjustedGas
+            );
+            emit log_named_int("evm account + storage gas", measurements.evmGas);
+            emit log_named_int("evm refund", measurements.evmRefund);
+            emit log_named_int("adjusted refund", measurements.adjustedRefund);
+            emit log_named_uint("makeup gas", makeup);
+        }
+        consumeAndMeterGas(makeup);
+        return (
+            observedGas + makeup + uint256(METER_OVERHEAD)
+                + uint256(TEST_OVERHEAD),
+            data
+        );
     }
 }
