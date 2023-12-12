@@ -3,33 +3,33 @@ pragma solidity ^0.8.17;
 
 import {Test, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
+import {AccessCosts, GasMeasurements} from "./Structs.sol";
 
 /**
  * @title TemperatureAccounting
  * @author emo.eth
  * @notice Helpers for manually accounting for gas accounting differences based
  *         on account and storage slot "warmth."
- *         TODO: use immutables to allow configuring for different networks and
- *         hard forks.
  */
 contract TemperatureAccounting {
     bytes32 immutable TEMPERATURE_ACCOUNTING_SLOT =
         keccak256("TemperatureAccounting");
-    int256 immutable COST_DIFF_COLD_ACCOUNT_ACCESS = 2500; // 2600 - 100 = 2500
-    int256 immutable COST_DIFF_COLD_SLOAD = 2000; // 2100 - 100 = 2100
-    int256 immutable COST_DIFF_DIRTY_WRITE;
-    int256 immutable COST_DIFF_WARM_WRITE_DIFF;
-    int256 immutable REFUND_RESTORE_SLOT_ORIGINAL_VALUE;
-    int256 immutable REFUND_RESTORE_SLOT_ZERO_VALUE;
-    int256 immutable REFUND_DELETE_SLOT;
+    int256 immutable COST_BASE_ACCESS;
+    int256 immutable COST_COLD_ACCOUNT_ACCESS;
+    int256 immutable COST_COLD_SLOAD;
+    int256 immutable COST_COLD_SSTORE;
+    int256 immutable COST_SSTORE_CHANGE_ORIGINAL_ZERO;
+    int256 immutable COST_SSTORE_CHANGE_ORIGINAL_NONZERO;
+    int256 immutable COST_SSTORE_CHANGE_NONORIGINAL;
+    int256 immutable COST_INITIALIZE_ACCOUNT;
+    int256 immutable REFUND_RESTORE_NONZERO_SLOT_TO_ZERO;
+    int256 immutable REFUND_TEMP_ZERO_TO_NONZERO;
+    int256 immutable REFUND_NONZERO_TO_ZERO;
+    int256 immutable REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_WARM;
+    int256 immutable REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_COLD;
+    int256 immutable REFUND_RESTORE_ORIGINAL_NONZERO_WARM;
+    int256 immutable REFUND_RESTORE_ORIGINAL_NONZERO_COLD;
     bool seenTarget;
-
-    struct GasMeasurements {
-        int256 evmGas;
-        int256 adjustedGas;
-        int256 evmRefund;
-        int256 adjustedRefund;
-    }
 
     struct TemperatureStorage {
         uint256 index;
@@ -53,6 +53,30 @@ contract TemperatureAccounting {
         mapping(
             address account => mapping(bytes32 slot => SlotStatus slotStatus)
             ) slotStatus;
+    }
+
+    constructor(AccessCosts memory costs) {
+        COST_BASE_ACCESS = costs.baseAccessCost;
+        COST_COLD_ACCOUNT_ACCESS = costs.costColdAccountAccess;
+        COST_COLD_SLOAD = costs.costColdSload;
+        COST_COLD_SSTORE = costs.costColdSstore;
+        COST_SSTORE_CHANGE_ORIGINAL_ZERO = costs.costSstoreChangeOriginalZero;
+        COST_SSTORE_CHANGE_ORIGINAL_NONZERO =
+            costs.costSstoreChangeOriginalNonZero;
+        COST_SSTORE_CHANGE_NONORIGINAL = costs.costSstoreChangeNonOriginal;
+        COST_INITIALIZE_ACCOUNT = costs.costInitializeAccount;
+        REFUND_RESTORE_NONZERO_SLOT_TO_ZERO =
+            costs.refundRestoreNonZeroSlotToZero;
+        REFUND_TEMP_ZERO_TO_NONZERO = costs.refundTempZeroToNonZero;
+        REFUND_NONZERO_TO_ZERO = costs.refundNonZeroToZero;
+        REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_WARM =
+            costs.refundRestoreTempNonZeroToZeroWarm;
+        REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_COLD =
+            costs.refundRestoreTempNonZeroToZeroCold;
+        REFUND_RESTORE_ORIGINAL_NONZERO_WARM =
+            costs.refundRestoreOriginalNonZeroWarm;
+        REFUND_RESTORE_ORIGINAL_NONZERO_COLD =
+            costs.refundRestoreOriginalNonZeroCold;
     }
 
     function getSlotMap()
@@ -193,10 +217,15 @@ contract TemperatureAccounting {
             adjustedGas = 0;
             // however, assume the evm charges standard gas for the call;
             // the difference will be accounted for by the burned makeup gas.
-            evmGas =
-                (accountStatus.needsWarmAdjustment) ? int256(100) : int256(2600);
+            evmGas = COST_BASE_ACCESS;
+            evmGas += (accountStatus.needsWarmAdjustment)
+                ? int256(0)
+                : COST_COLD_ACCOUNT_ACCESS;
+            // warm up target account
+            accountStatus.needsWarmAdjustment = false;
+            accountStatus.isWarm = true;
         } else {
-            evmGas = adjustedGas = 100;
+            evmGas = adjustedGas = COST_BASE_ACCESS;
 
             // call and selfdestruct must pay extra gas for uninitialized accounts
             if (
@@ -207,8 +236,8 @@ contract TemperatureAccounting {
             ) {
                 // struct already accounts for whether or not account is initialized, including due to reverts
                 if (access.value > 0 && !access.initialized) {
-                    adjustedGas += 25_000; // COST_UNINITIALIZED_ACCOUNT_SEND_VALUE
-                    evmGas += 25_000;
+                    adjustedGas += COST_INITIALIZE_ACCOUNT; // COST_UNINITIALIZED_ACCOUNT_SEND_VALUE
+                    evmGas += COST_INITIALIZE_ACCOUNT;
                 }
             }
 
@@ -223,11 +252,11 @@ contract TemperatureAccounting {
                             || access.kind == VmSafe.AccountAccessKind.Resume
                     )
                 ) {
-                    adjustedGas += COST_DIFF_COLD_ACCOUNT_ACCESS;
+                    adjustedGas += COST_COLD_ACCOUNT_ACCESS;
                     // only add cold surcharge to evmGas if the account was not warmed by set-up
                     evmGas += (accountStatus.needsWarmAdjustment)
                         ? int256(0)
-                        : COST_DIFF_COLD_ACCOUNT_ACCESS;
+                        : COST_COLD_ACCOUNT_ACCESS;
                 }
                 // If this is the first time the account is accessed, and the
                 // callframe did not revert, or if the account was the target of a
@@ -284,13 +313,13 @@ contract TemperatureAccounting {
             slotMap.slotStatus[accessedAccount][accessedSlot];
         // if doing an SLOAD, just account for the cold surcharge, and do nothing with refunds
         if (!access.isWrite) {
-            evmGas = adjustedGas = 100;
+            evmGas = adjustedGas = COST_BASE_ACCESS;
             if (slotStatus.needsWarmAdjustment || !slotStatus.isWarm) {
-                adjustedGas += COST_DIFF_COLD_SLOAD;
+                adjustedGas += COST_COLD_SLOAD;
                 // only add cold surcharge to evmGas if the slot was not warmed by set-up
                 evmGas += (slotStatus.needsWarmAdjustment)
                     ? int256(0)
-                    : COST_DIFF_COLD_SLOAD;
+                    : COST_COLD_SLOAD;
                 if (!access.reverted) {
                     slotStatus.needsWarmAdjustment = false;
                     slotStatus.isWarm = true;
@@ -333,7 +362,7 @@ contract TemperatureAccounting {
         bytes32 originalValue,
         bytes32 currentValue,
         bytes32 newValue
-    ) public pure returns (int256 baseDynamicGas, int256 gasRefund) {
+    ) public view returns (int256 baseDynamicGas, int256 gasRefund) {
         return (
             calcSstoreBaseDynamicGas(
                 warm, originalValue, currentValue, newValue
@@ -354,23 +383,23 @@ contract TemperatureAccounting {
         bytes32 originalValue,
         bytes32 currentValue,
         bytes32 newValue
-    ) public pure virtual returns (int256 baseDynamicGas) {
+    ) public view virtual returns (int256 baseDynamicGas) {
         if (newValue == currentValue) {
             if (warm) {
-                baseDynamicGas = 100; // COST_WARM_SSTORE_SAME_VALUE;
+                baseDynamicGas = COST_BASE_ACCESS; // COST_WARM_SSTORE_SAME_VALUE;
             } else {
-                baseDynamicGas = 100; // COST_COLD_SSTORE_SAME_VALUE;
+                baseDynamicGas = COST_BASE_ACCESS; // COST_COLD_SSTORE_SAME_VALUE;
             }
         } else if (currentValue == originalValue) {
             if (originalValue == 0) {
-                baseDynamicGas = 20000; // COST_SSTORE_CHANGE_ORIGINAL_ZERO;
+                baseDynamicGas = COST_SSTORE_CHANGE_ORIGINAL_ZERO; // COST_SSTORE_CHANGE_ORIGINAL_ZERO;
             } else {
-                baseDynamicGas = 2900; // COST_SSTORE_CHANGE_ORIGINAL_NONZERO;
+                baseDynamicGas = COST_SSTORE_CHANGE_ORIGINAL_NONZERO; // COST_SSTORE_CHANGE_ORIGINAL_NONZERO;
             }
         } else {
-            baseDynamicGas = 100; // COST_SSTORE_CHANGE_NONORIGINAL;
+            baseDynamicGas = COST_SSTORE_CHANGE_NONORIGINAL; // COST_SSTORE_CHANGE_NONORIGINAL;
         }
-        baseDynamicGas += (warm) ? int256(0) : int256(2100); // COST_SSTORE_COLD_ACCESS;
+        baseDynamicGas += (warm) ? int256(0) : int256(COST_COLD_SSTORE); // COST_SSTORE_COLD_ACCESS;
     }
 
     /**
@@ -385,32 +414,32 @@ contract TemperatureAccounting {
         bytes32 originalValue,
         bytes32 currentValue,
         bytes32 newValue
-    ) public pure virtual returns (int256 gasRefund) {
+    ) public view virtual returns (int256 gasRefund) {
         if (newValue != currentValue) {
             if (currentValue == originalValue) {
                 if (originalValue != 0 && newValue == 0) {
-                    gasRefund += 4800; // REFUND_RESTORE_SLOT_NONZERO;
+                    gasRefund += REFUND_RESTORE_NONZERO_SLOT_TO_ZERO; //4800; // REFUND_RESTORE_SLOT_NONZERO;
                 }
             } else if (originalValue != 0) {
                 if (currentValue == 0) {
-                    gasRefund -= 4800; // REFUND_DIRTY_TRANSIENT_ZERO;
+                    gasRefund -= REFUND_TEMP_ZERO_TO_NONZERO; // REFUND_DIRTY_TRANSIENT_ZERO;
                 } else if (newValue == 0) {
-                    gasRefund += 4800; // REFUND_CLEAR_DIRTY_SLOT;
+                    gasRefund += REFUND_NONZERO_TO_ZERO; // REFUND_CLEAR_DIRTY_SLOT;
                 }
             }
         }
         if (newValue == originalValue) {
             if (originalValue == 0) {
                 if (warm) {
-                    gasRefund += 20000 - 100; // REFUND_WARM_RESTORE_SLOT_ORIGINAL_VALUE_ZERO;
+                    gasRefund += REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_WARM; // REFUND_WARM_RESTORE_SLOT_ORIGINAL_VALUE_ZERO;
                 } else {
-                    gasRefund += 19900; // REFUND_COLD_RESTORE_SLOT_ORIGINAL_VALUE_ZERO;
+                    gasRefund += REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_COLD; // REFUND_COLD_RESTORE_SLOT_ORIGINAL_VALUE_ZERO;
                 }
             } else {
                 if (warm) {
-                    gasRefund += 5000 - 2100 - 100; // REFUND_WARM_RESTORE_SLOT_ORIGINAL_VALUE_NONZERO;
+                    gasRefund += REFUND_RESTORE_ORIGINAL_NONZERO_WARM; // REFUND_WARM_RESTORE_SLOT_ORIGINAL_VALUE_NONZERO;
                 } else {
-                    gasRefund += 4900; // REFUND_COLD_RESTORE_SLOT_ORIGINAL_VALUE_NONZERO;
+                    gasRefund += REFUND_RESTORE_ORIGINAL_NONZERO_COLD; // REFUND_COLD_RESTORE_SLOT_ORIGINAL_VALUE_NONZERO;
                 }
             }
         }

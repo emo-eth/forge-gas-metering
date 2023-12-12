@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
-import {AccessListEntry, TransactionData} from "./Structs.sol";
+import {AccessListEntry, TransactionData, NetworkTxCosts} from "./Structs.sol";
 
+/**
+ * @title TransactionOverheadUtils
+ * @author emo.eth
+ * @notice Utils for calculating transaction overhead.
+ */
 contract TransactionOverheadUtils {
     uint256 immutable CALLDATA_ZERO_BYTE_COST;
     uint256 immutable CALLDATA_NON_ZERO_BYTE_COST;
@@ -10,18 +15,12 @@ contract TransactionOverheadUtils {
     uint256 immutable ACCESS_LIST_ADDRESS_COST;
     uint256 immutable ACCESS_LIST_STORAGE_KEY_COST;
 
-    constructor(
-        uint256 calldataZeroByteCost,
-        uint256 calldataNonZeroByteCost,
-        uint256 flatTxCost,
-        uint256 accessListAddressCost,
-        uint256 accessListStorageKeyCost
-    ) {
-        CALLDATA_ZERO_BYTE_COST = calldataZeroByteCost;
-        CALLDATA_NON_ZERO_BYTE_COST = calldataNonZeroByteCost;
-        FLAT_TX_COST = flatTxCost;
-        ACCESS_LIST_ADDRESS_COST = accessListAddressCost;
-        ACCESS_LIST_STORAGE_KEY_COST = accessListStorageKeyCost;
+    constructor(NetworkTxCosts memory networkTxCosts) {
+        CALLDATA_ZERO_BYTE_COST = networkTxCosts.calldataZeroByteCost;
+        CALLDATA_NON_ZERO_BYTE_COST = networkTxCosts.calldataNonZeroByteCost;
+        FLAT_TX_COST = networkTxCosts.flatTxCost;
+        ACCESS_LIST_ADDRESS_COST = networkTxCosts.accessListAddressCost;
+        ACCESS_LIST_STORAGE_KEY_COST = networkTxCosts.accessListStorageKeyCost;
     }
 
     function getCallOverhead(address to, bytes memory callData)
@@ -69,9 +68,10 @@ contract TransactionOverheadUtils {
         view
         returns (uint256)
     {
+        bytes memory transformed = preprocessCalldata(callData);
         uint256 cost;
-        for (uint256 i; i < callData.length;) {
-            if (callData[i] == 0) {
+        for (uint256 i; i < transformed.length;) {
+            if (transformed[i] == 0) {
                 unchecked {
                     cost += CALLDATA_ZERO_BYTE_COST;
                 }
@@ -85,5 +85,19 @@ contract TransactionOverheadUtils {
             }
         }
         return cost;
+    }
+
+    /**
+     * @notice Preprocess calldata according to network rules, ie, Arbitrum
+     *         first compresses calldata, then charges 4 gas per byte.
+     * @param callData The calldata to preprocess.
+     */
+    function preprocessCalldata(bytes memory callData)
+        internal
+        pure
+        virtual
+        returns (bytes memory)
+    {
+        return callData;
     }
 }

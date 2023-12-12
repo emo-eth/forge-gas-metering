@@ -11,3 +11,36 @@ struct TransactionData {
     bytes callData;
     AccessListEntry[] accessListEntries;
 }
+
+struct NetworkTxCosts {
+    uint256 calldataZeroByteCost;
+    uint256 calldataNonZeroByteCost;
+    uint256 flatTxCost;
+    uint256 accessListAddressCost;
+    uint256 accessListStorageKeyCost;
+}
+
+struct AccessCosts {
+    int256 baseAccessCost;
+    int256 costColdAccountAccess;
+    int256 costColdSload;
+    int256 costColdSstore;
+    int256 costSstoreChangeOriginalZero;
+    int256 costSstoreChangeOriginalNonZero;
+    int256 costSstoreChangeNonOriginal;
+    int256 costInitializeAccount;
+    int256 refundRestoreNonZeroSlotToZero;
+    int256 refundTempZeroToNonZero;
+    int256 refundNonZeroToZero;
+    int256 refundRestoreTempNonZeroToZeroWarm;
+    int256 refundRestoreTempNonZeroToZeroCold;
+    int256 refundRestoreOriginalNonZeroWarm;
+    int256 refundRestoreOriginalNonZeroCold;
+}
+
+struct GasMeasurements {
+    int256 evmGas;
+    int256 adjustedGas;
+    int256 evmRefund;
+    int256 adjustedRefund;
+}

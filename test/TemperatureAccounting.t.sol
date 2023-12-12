@@ -4,6 +4,25 @@ pragma solidity ^0.8.17;
 import {Vm, Test} from "forge-std/Test.sol";
 import {TemperatureAccounting} from "src/./TemperatureAccounting.sol";
 import {VmSafe} from "forge-std/Vm.sol";
+import {AccessCosts, GasMeasurements} from "src/./Structs.sol";
+
+import {
+    MAINNET_BASE_ACCESS_COST,
+    MAINNET_COST_COLD_ACCOUNT_ACCESS,
+    MAINNET_COST_COLD_SLOAD,
+    MAINNET_COST_COLD_SSTORE,
+    MAINNET_COST_SSTORE_CHANGE_ORIGINAL_ZERO,
+    MAINNET_COST_SSTORE_CHANGE_ORIGINAL_NON_ZERO,
+    MAINNET_COST_SSTORE_CHANGE_NON_ORIGINAL,
+    MAINNET_COST_INITIALIZE_ACCOUNT,
+    MAINNET_REFUND_RESTORE_NON_ZERO_SLOT_TO_ZERO,
+    MAINNET_REFUND_TEMP_ZERO_TO_NON_ZERO,
+    MAINNET_REFUND_NON_ZERO_TO_ZERO,
+    MAINNET_REFUND_RESTORE_TEMP_NON_ZERO_TO_ZERO_WARM,
+    MAINNET_REFUND_RESTORE_TEMP_NON_ZERO_TO_ZERO_COLD,
+    MAINNET_REFUND_RESTORE_ORIGINAL_NON_ZERO_WARM,
+    MAINNET_REFUND_RESTORE_ORIGINAL_NON_ZERO_COLD
+} from "src/Constants.sol";
 
 contract Writer {
     function write(bytes32 slot, bytes32 newVal) public {
@@ -34,7 +53,25 @@ contract TemperatureAccountingTest is Test {
     function setUp() public {
         vm.startStateDiffRecording();
         writer = new Writer();
-        target = new TemperatureAccounting();
+        target = new TemperatureAccounting(
+            AccessCosts({
+                baseAccessCost: MAINNET_BASE_ACCESS_COST,
+                costColdAccountAccess: MAINNET_COST_COLD_ACCOUNT_ACCESS,
+                costColdSload: MAINNET_COST_COLD_SLOAD,
+                costColdSstore: MAINNET_COST_COLD_SSTORE,
+                costSstoreChangeOriginalZero: MAINNET_COST_SSTORE_CHANGE_ORIGINAL_ZERO,
+                costSstoreChangeOriginalNonZero: MAINNET_COST_SSTORE_CHANGE_ORIGINAL_NON_ZERO,
+                costSstoreChangeNonOriginal: MAINNET_COST_SSTORE_CHANGE_NON_ORIGINAL,
+                costInitializeAccount: MAINNET_COST_INITIALIZE_ACCOUNT,
+                refundRestoreNonZeroSlotToZero: MAINNET_REFUND_RESTORE_NON_ZERO_SLOT_TO_ZERO,
+                refundTempZeroToNonZero: MAINNET_REFUND_TEMP_ZERO_TO_NON_ZERO,
+                refundNonZeroToZero: MAINNET_REFUND_NON_ZERO_TO_ZERO,
+                refundRestoreTempNonZeroToZeroWarm: MAINNET_REFUND_RESTORE_TEMP_NON_ZERO_TO_ZERO_WARM,
+                refundRestoreTempNonZeroToZeroCold: MAINNET_REFUND_RESTORE_TEMP_NON_ZERO_TO_ZERO_COLD,
+                refundRestoreOriginalNonZeroWarm: MAINNET_REFUND_RESTORE_ORIGINAL_NON_ZERO_WARM,
+                refundRestoreOriginalNonZeroCold: MAINNET_REFUND_RESTORE_ORIGINAL_NON_ZERO_COLD
+            })
+        );
     }
     /**
      * @notice Test that state diff recording works in the way we expect
@@ -57,7 +94,7 @@ contract TemperatureAccountingTest is Test {
         writer.call("");
         diffs = filterExtcodesize(vm.stopAndReturnStateDiff());
         assertEq(diffs.length, 1, "diffs.length");
-        TemperatureAccounting.GasMeasurements memory measurements =
+        GasMeasurements memory measurements =
             target.processAccountAccesses(address(0), diffs);
         emit log_named_int("evm gas", measurements.evmGas);
         emit log_named_int("adjusted gas", measurements.adjustedGas);
@@ -75,7 +112,7 @@ contract TemperatureAccountingTest is Test {
         writer.read(bytes32(0));
         diffs = filterExtcodesize(vm.stopAndReturnStateDiff());
         assertEq(diffs.length, 1, "diffs.length");
-        TemperatureAccounting.GasMeasurements memory measurements =
+        GasMeasurements memory measurements =
             target.processAccountAccesses(address(0), diffs);
         emit log_named_int("evm gas", measurements.evmGas);
         emit log_named_int("adjusted gas", measurements.adjustedGas);
@@ -97,7 +134,7 @@ contract TemperatureAccountingTest is Test {
         diffs = filterExtcodesize(vm.stopAndReturnStateDiff());
 
         assertEq(diffs.length, 1, "diffs.length");
-        TemperatureAccounting.GasMeasurements memory measurements =
+        GasMeasurements memory measurements =
             target.processAccountAccesses(address(0), diffs);
         emit log_named_int("evm gas", measurements.evmGas);
         emit log_named_int("adjusted gas", measurements.adjustedGas);
@@ -120,7 +157,7 @@ contract TemperatureAccountingTest is Test {
         }
         diffs = filterExtcodesize(vm.stopAndReturnStateDiff());
         assertEq(diffs.length, 100, "diffs.length");
-        TemperatureAccounting.GasMeasurements memory measurements =
+        GasMeasurements memory measurements =
             target.processAccountAccesses(address(writer), diffs);
         emit log_named_int("evm gas", measurements.evmGas);
         emit log_named_int("adjusted gas", measurements.adjustedGas);

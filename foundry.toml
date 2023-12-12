@@ -3,7 +3,7 @@ src = "src"
 out = "out"
 libs = ["lib"]
 optimizer = true
-# optimizer_runs = 10000
+optimizer_runs = 9_999_999
 # via_ir = true
 
 [fuzz]

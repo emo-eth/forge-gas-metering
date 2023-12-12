@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
-import {AccessListEntry, TransactionData} from "./Structs.sol";
+import {
+    NetworkTxCosts,
+    AccessListEntry,
+    TransactionData,
+    AccessCosts,
+    GasMeasurements
+} from "./Structs.sol";
 import {Test, Vm} from "forge-std/Test.sol";
 import {TransactionOverheadUtils} from "./TransactionOverheadUtils.sol";
 import {GasConsumer} from "./GasConsumer.sol";
@@ -24,19 +30,11 @@ contract Metering is
     bool verboseMetering;
 
     constructor(
-        uint256 calldataZeroByteCost,
-        uint256 calldataNonZeroByteCost,
-        uint256 flatTxCost,
-        uint256 accessListAddressCost,
-        uint256 accessListStorageKeyCost
+        NetworkTxCosts memory networkTxCosts,
+        AccessCosts memory accessCosts
     )
-        TransactionOverheadUtils(
-            calldataZeroByteCost,
-            calldataNonZeroByteCost,
-            flatTxCost,
-            accessListAddressCost,
-            accessListStorageKeyCost
-        )
+        TransactionOverheadUtils(networkTxCosts)
+        TemperatureAccounting(accessCosts)
     {}
 
     /**
