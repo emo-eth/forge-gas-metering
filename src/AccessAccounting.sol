@@ -10,6 +10,7 @@ import {AccessCosts, GasMeasurements} from "./Structs.sol";
  * @author emo.eth
  * @notice Helpers for manually accounting for gas accounting differences based
  *         on account and storage slot "warmth."
+ *         TODO: Support multiple forks/chainId accounting.
  */
 contract AccessAccounting {
     bytes32 immutable ACCESS_ACCOUNTING_SLOT = keccak256("AccessAccounting");
@@ -30,10 +31,6 @@ contract AccessAccounting {
     int256 immutable REFUND_RESTORE_ORIGINAL_NONZERO_COLD;
     bool seenTarget;
 
-    struct TemperatureStorage {
-        uint256 index;
-    }
-
     struct SlotStatus {
         bool needsWarmAdjustment;
         bool seen;
@@ -47,7 +44,7 @@ contract AccessAccounting {
         bool isWarm;
     }
 
-    struct SlotTemperatureMapping {
+    struct AccessAccountingStorage {
         mapping(address account => AccountStatus status) accountStatus;
         mapping(
             address account => mapping(bytes32 slot => SlotStatus slotStatus)
@@ -78,17 +75,20 @@ contract AccessAccounting {
             costs.refundRestoreOriginalNonZeroCold;
     }
 
-    function getSlotMap()
+    /**
+     * @notice Get the storage struct for this contract
+     */
+    function getAccessAccountingStorage()
         internal
         view
-        returns (SlotTemperatureMapping storage)
+        returns (AccessAccountingStorage storage)
     {
-        TemperatureStorage storage tempSlot;
+        // TODO: support multiple forks by parameterizing this function
+        uint256 forkId = 0;
         bytes32 slot = ACCESS_ACCOUNTING_SLOT;
-        SlotTemperatureMapping storage slotMap;
+        AccessAccountingStorage storage slotMap;
         assembly {
-            tempSlot.slot := slot
-            mstore(0x00, sload(slot))
+            mstore(0x00, forkId)
             mstore(0x20, slot)
             slotMap.slot := keccak256(0x00, 0x40)
         }
@@ -109,7 +109,7 @@ contract AccessAccounting {
         public
         returns (Vm.AccountAccess memory)
     {
-        SlotTemperatureMapping storage slotMap = getSlotMap();
+        AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
         address accessedAccount = access.account;
         AccountStatus storage accountStatus =
             slotMap.accountStatus[accessedAccount];
@@ -124,7 +124,7 @@ contract AccessAccounting {
     }
 
     function preprocessStorageAccess(Vm.StorageAccess memory access) public {
-        SlotTemperatureMapping storage slotMap = getSlotMap();
+        AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
         address accessedAccount = access.account;
         bytes32 accessedSlot = access.slot;
         SlotStatus storage slotStatus =
@@ -202,7 +202,7 @@ contract AccessAccounting {
             int256 adjustedRefund
         )
     {
-        SlotTemperatureMapping storage slotMap = getSlotMap();
+        AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
         address accessedAccount = access.account;
         AccountStatus storage accountStatus =
             slotMap.accountStatus[accessedAccount];
@@ -308,7 +308,7 @@ contract AccessAccounting {
             int256 adjustedRefund
         )
     {
-        SlotTemperatureMapping storage slotMap = getSlotMap();
+        AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
         address accessedAccount = access.account;
         bytes32 accessedSlot = access.slot;
         SlotStatus storage slotStatus =
