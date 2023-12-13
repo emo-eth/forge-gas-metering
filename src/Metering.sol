@@ -179,11 +179,9 @@ contract Metering is
         GasMeasurements memory measurements = processAccountAccesses(to, diffs);
         uint256 makeup = calcGasToBurn(
             int256(overheadGasCost),
-            int256(observedGas) - METER_OVERHEAD, // + TEST_OVERHEAD),
+            int256(observedGas) - METER_OVERHEAD,
             int256(measurements.evmGas),
-            int256(measurements.adjustedGas), // - int256(TEST_OVERHEAD)
-                //     - METER_OVERHEAD
-            // ),
+            int256(measurements.adjustedGas),
             measurements.evmRefund,
             measurements.adjustedRefund,
             ALL_OVERHEAD
