@@ -25,16 +25,6 @@ contract GasConsumer {
     }
 
     /**
-     * @notice warm the INVALID_ADDRESS so subsequent calls cost a flat 100 gas
-     */
-    function setUpGasConsumer() internal view {
-        address invalidAddress = INVALID_ADDRESS;
-        assembly ("memory-safe") {
-            pop(staticcall(0, invalidAddress, 0, 0, 0, 0))
-        }
-    }
-
-    /**
      * @notice Consume an amount of gas in constant time. With optimizer
      *         enabled, and INVALID_ADDRESS already warmed, it should be
      *         accurate within 33 gas units if the amount is greater than
@@ -44,6 +34,7 @@ contract GasConsumer {
      * @param amount The amount of gas to consume, += 33 depending on compiler
      *               settings
      */
+
     function consumeGas(uint256 amount) internal view {
         address invalidAddress = INVALID_ADDRESS;
         assembly ("memory-safe") {

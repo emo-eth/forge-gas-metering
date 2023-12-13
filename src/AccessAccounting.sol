@@ -29,6 +29,9 @@ contract AccessAccounting {
     int256 immutable REFUND_RESTORE_TEMP_NONZERO_TO_ZERO_COLD;
     int256 immutable REFUND_RESTORE_ORIGINAL_NONZERO_WARM;
     int256 immutable REFUND_RESTORE_ORIGINAL_NONZERO_COLD;
+    address private constant HEVM_ADDRESS =
+        0x7109709ECfa91a80626fF3989D68f67F5b1DD12D;
+
     bool seenTarget;
 
     struct SlotStatus {
@@ -73,6 +76,15 @@ contract AccessAccounting {
             costs.refundRestoreOriginalNonZeroWarm;
         REFUND_RESTORE_ORIGINAL_NONZERO_COLD =
             costs.refundRestoreOriginalNonZeroCold;
+    }
+
+    function makeAndMarkWarm(address account) internal returns (uint256 x) {
+        assembly {
+            x := balance(account)
+        }
+        AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
+        slotMap.accountStatus[account] =
+            AccountStatus({needsWarmAdjustment: false, isWarm: true});
     }
 
     /**
@@ -452,6 +464,7 @@ contract AccessAccounting {
      * @param account The account to check.
      */
     function isPrecompile(address account) public pure virtual returns (bool) {
-        return account < address(10) && account > address(0);
+        return (account < address(10) && account > address(0))
+            || account == HEVM_ADDRESS;
     }
 }

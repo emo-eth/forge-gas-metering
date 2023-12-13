@@ -11,12 +11,14 @@ contract MeteringTest is MainnetMetering {
     TestERC20 token1;
     TestERC20 token2;
     TokenTransferrer transferrer;
+    int256 warmStorageTest;
 
     function setUp() public {
         setUpMetering({verbose: true});
         token1 = new TestERC20();
         token2 = new TestERC20();
         transferrer = new TokenTransferrer();
+        warmStorageTest = 1;
     }
 
     function testCalldataCosts() public {
@@ -35,7 +37,10 @@ contract MeteringTest is MainnetMetering {
         );
     }
 
-    function testManualMetering() public {
+    function testManualMetering() public manuallyMetered {
+        // uint256 start = gasleft();
+        initializeCallMetering();
+        // emit log_named_uint("after initialize", start - gasleft());
         meterCallAndLog({
             to: address(0x123456),
             callData: hex"000001",
@@ -43,18 +48,20 @@ contract MeteringTest is MainnetMetering {
             transaction: true,
             message: "manual"
         });
+        // emit log_named_uint("after meter", start - gasleft());
 
-        vm.resumeGasMetering();
+        // vm.resumeGasMetering();
     }
 
-    function testRealWorldErc20() public {
+    function testMeteringRealWorldErc20() public manuallyMetered {
+        initializeCallMetering();
         address alice = makeAddr("alice");
         address bob = makeAddr("bob");
         token1.deal(alice, 100);
         token1.deal(address(makeAddr("bob")), 100);
         // token2.deal(alice, 200);
         // token2.deal(address(makeAddr("bob")), 200);
-        vm.startPrank(alice);
+        vm.prank(alice);
         token1.approve(address(transferrer), type(uint256).max);
         // vm.startPrank(bob);
         // token2.approve(address(transferrer), 200);
@@ -68,7 +75,12 @@ contract MeteringTest is MainnetMetering {
             transaction: true,
             message: "spend"
         });
-        vm.resumeGasMetering();
+        // vm.resumeGasMetering();
         // transferrer.spend(address(token1), alice, bob, 99);
+    }
+
+    function testWarmStorage() public {
+        vm.resumeGasMetering();
+        warmStorageTest = 2;
     }
 }

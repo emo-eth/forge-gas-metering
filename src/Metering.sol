@@ -38,7 +38,10 @@ contract Metering is
     Test
 {
     int256 constant METER_OVERHEAD = 31;
-    uint256 constant TEST_OVERHEAD = 6344;
+    int256 constant CONSUME_CALL_OVERHEAD = 275;
+    int256 constant MYSTERY_TEST_OVERHEAD = 4153; //4147;
+    int256 constant ALL_OVERHEAD =
+        METER_OVERHEAD + CONSUME_CALL_OVERHEAD + MYSTERY_TEST_OVERHEAD;
     uint256 constant PAUSE_GAS_METERING = 0xd1a5b36f;
     uint256 constant RESUME_GAS_METERING = 0x2bcd50e0;
     uint256 constant START_STATE_DIFF = 0xcf22e3c9;
@@ -56,19 +59,37 @@ contract Metering is
     modifier metered() virtual {
         vm.resumeGasMetering();
         _;
-        vm.pauseGasMetering();
+        // ~128 gas
+        assembly ("memory-safe") {
+            mstore(0, PAUSE_GAS_METERING) // ~9 gas
+            pop(
+                staticcall(gas(), VM, 0x1c, 0x4, 0, 0) // ~119 gas
+            )
+        }
     }
 
     modifier manuallyMetered() virtual {
         _;
-        vm.resumeGasMetering();
+
+        assembly ("memory-safe") {
+            let g := gas()
+            mstore(0, RESUME_GAS_METERING)
+            pop(staticcall(gas(), VM, 0x1c, 4, 0, 0))
+            log1(0, 0, sub(g, gas()))
+            return(0, 0)
+        }
+        // vm.resumeGasMetering();
     }
 
     function setUpMetering(bool verbose) internal {
         vm.pauseGasMetering();
         verboseMetering = verbose;
+    }
+
+    function initializeCallMetering() internal {
+        makeAndMarkWarm(INVALID_ADDRESS);
+        // makeAndMarkWarm(VM_ADDRESS);
         vm.startStateDiffRecording();
-        setUpGasConsumer();
     }
 
     /**
@@ -125,7 +146,6 @@ contract Metering is
 
         Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
         preprocessAccesses(diffs);
-
         // track evm gas usage
         uint256 observedGas;
         uint256 returndataSize;
@@ -157,16 +177,16 @@ contract Metering is
 
         diffs = vm.stopAndReturnStateDiff();
         GasMeasurements memory measurements = processAccountAccesses(to, diffs);
-        uint256 makeup = calcMakeupGasToBurn(
+        uint256 makeup = calcGasToBurn(
             int256(overheadGasCost),
-            int256(observedGas + TEST_OVERHEAD),
+            int256(observedGas) - METER_OVERHEAD, // + TEST_OVERHEAD),
             int256(measurements.evmGas),
-            int256(
-                measurements.adjustedGas - int256(TEST_OVERHEAD)
-                    - METER_OVERHEAD
-            ),
+            int256(measurements.adjustedGas), // - int256(TEST_OVERHEAD)
+                //     - METER_OVERHEAD
+            // ),
             measurements.evmRefund,
-            measurements.adjustedRefund
+            measurements.adjustedRefund,
+            ALL_OVERHEAD
         );
 
         if (verboseMetering) {
@@ -175,16 +195,16 @@ contract Metering is
             emit log_named_int(
                 "adjusted account + storage gas", measurements.adjustedGas
             );
-            emit log_named_int(
-                "adjusted overhead gas", METER_OVERHEAD + int256(TEST_OVERHEAD)
-            );
+            emit log_named_int("extra overhead gas", ALL_OVERHEAD);
             emit log_named_int("evm account + storage gas", measurements.evmGas);
             emit log_named_int("evm refund", measurements.evmRefund);
             emit log_named_int("adjusted refund", measurements.adjustedRefund);
             emit log_named_uint("makeup gas", makeup);
         }
-
+        uint256 start = gasleft();
         consumeAndMeterGas(makeup);
-        return (observedGas + makeup + uint256(TEST_OVERHEAD), data);
+        emit log_named_uint("consume cost", start - gasleft());
+        // emit log_named_uint("after consume", start - gasleft());
+        return (observedGas + makeup, data);
     }
 }

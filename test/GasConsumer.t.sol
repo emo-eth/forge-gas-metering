@@ -18,7 +18,7 @@ contract GasConsumerTest is GasConsumer, Test {
         assertEq(codeSize, 1);
         assertEq(code[0], hex"FE");
 
-        setUpGasConsumer();
+        // initializeGasConsumer();
         gasToUse =
             uint32(bound(gasToUse, CONSUME_OVERHEAD + 1, type(uint24).max));
         uint256 startingGas = gasleft();

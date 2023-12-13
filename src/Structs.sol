@@ -23,6 +23,7 @@ struct NetworkTxCosts {
 struct AccessCosts {
     int256 baseAccessCost;
     int256 costColdAccountAccess;
+    // int256 costCallPositiveValue; // in practice this shouldn't be affected by Foundry test execution
     int256 costColdSload;
     int256 costColdSstore;
     int256 costSstoreChangeOriginalZero;

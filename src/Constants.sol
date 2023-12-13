@@ -9,6 +9,9 @@ uint256 constant MAINNET_ACCESS_LIST_STORAGE_KEY_COST = 1900;
 
 int256 constant MAINNET_BASE_ACCESS_COST = 100;
 int256 constant MAINNET_COST_COLD_ACCOUNT_ACCESS = 2500;
+// 9000 - 2300 (added to gas stipend)
+// in practice this shouldn't be affected by Foundry test execution
+int256 constant MAINNET_COST_CALL_POSITIVE_VALUE = 6700; 
 int256 constant MAINNET_COST_COLD_SLOAD = 2000;
 int256 constant MAINNET_COST_COLD_SSTORE = 2100;
 int256 constant MAINNET_COST_SSTORE_CHANGE_ORIGINAL_ZERO = 20000;

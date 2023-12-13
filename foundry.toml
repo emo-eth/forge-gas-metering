@@ -3,10 +3,14 @@ src = "src"
 out = "out"
 libs = ["lib"]
 optimizer = true
-# optimizer_runs = 9_999_999
+optimizer_runs = 9_999_999
 # via_ir = true
 # evm_version = 'shanghai'
-remappings = ['forge-std/=lib/forge-std/src/', 'solady/=lib/solady/src/']
+remappings = [
+    'forge-std/=lib/forge-std/src/',
+    'solady/=lib/solady/src/',
+    'ds-test/=lib/forge-std/lib/ds-test/src/',
+]
 
 [fuzz]
 runs = 1024
