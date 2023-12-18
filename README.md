@@ -17,9 +17,9 @@ Here is a simple example:
 pragma solidity ^0.8.22;
 
 import {Test} from "forge-std/Test.sol";
-import {Metering} from "src/Metering.sol";
+import {MainnetMetering} from "src/MainnetMetering.sol";
 
-contract MeteringTest is Metering {
+contract MeteringTest is MainnetMetering {
     function setUp() public {
         setUpMetering({verbose: false});
     }
