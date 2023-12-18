@@ -18,6 +18,7 @@ struct NetworkTxCosts {
     uint256 flatTxCost;
     uint256 accessListAddressCost;
     uint256 accessListStorageKeyCost;
+    uint256 maxRefundDenominator;
 }
 
 struct AccessCosts {

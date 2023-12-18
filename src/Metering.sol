@@ -12,7 +12,6 @@ import {Test, Vm} from "forge-std/Test.sol";
 import {TransactionOverheadUtils} from "./TransactionOverheadUtils.sol";
 import {GasConsumer} from "./GasConsumer.sol";
 import {AccessAccounting} from "./AccessAccounting.sol";
-import {RefundMath} from "./RefundMath.sol";
 
 /**
  * @title Metering
@@ -20,32 +19,41 @@ import {RefundMath} from "./RefundMath.sol";
  * @notice Metering utils for calculating gas consumed by an external call, as
  *         if it were executed as a solo transaction by the EVM.
  *         To measure gas usage of an external function call:
- *         - Call `vm.pauseGasMetering` before *any* test setup is done, ie, as
- *           the first line of the `setUp` function.
+ *         - Call `setUpMetering` in the `setUp` method.
+ *         - Add the `manuallyMetered` modifier to all tests
  *         - Do test setup as normal
- *         - Prepare all calldata
+ *         - Prepare calldata for calls you wish to meter
  *         - Call `meterCallAndLog` or `meterCall` with the target, calldata,
  *           and value
- *         - Call `vm.resumeGasMetering` afterwards to deal with annoying
- *           Foundry bugs
  *
  */
 contract Metering is
     TransactionOverheadUtils,
     GasConsumer,
     AccessAccounting,
-    RefundMath,
     Test
 {
+    /// @dev approximate additional overhead of calling the target account that
+    /// is not accounted for by AccessAccounting
     int256 constant METER_OVERHEAD = 31;
+    /// @dev approximate overhead of calling the meterGas method
     int256 constant CONSUME_CALL_OVERHEAD = 275;
-    int256 constant MYSTERY_TEST_OVERHEAD = 4153; //4147;
+    /// @dev approximate overhead of running a test that touches the pause/resume cheatcodes
+    /// todo: maybe cost of checking failed storage slots?
+    int256 constant MYSTERY_TEST_OVERHEAD = 4103; //4147;
+    /// @dev convenience constant of all additional overhead
     int256 constant ALL_OVERHEAD =
         METER_OVERHEAD + CONSUME_CALL_OVERHEAD + MYSTERY_TEST_OVERHEAD;
+    /// @dev selector to call the vm.pauseGasMetering cheatcode in assembly (to avoid solidity EXTCODSIZE checks)
     uint256 constant PAUSE_GAS_METERING = 0xd1a5b36f;
+    /// @dev selector to call the vm.resumeGasMetering cheatcode in assembly (to avoid solidity EXTCODSIZE checks)
     uint256 constant RESUME_GAS_METERING = 0x2bcd50e0;
+    /// @dev selector to call the vm.startStateDiffRecording cheatcode in assembly (to avoid solidity EXTCODSIZE checks)
     uint256 constant START_STATE_DIFF = 0xcf22e3c9;
+    /// @dev convenience constant to access the HEVM address in assembly
     uint256 constant VM = 0x007109709ecfa91a80626ff3989d68f67f5b1dd12d;
+
+    /// @dev When true, log more granular information about makeup gas
     bool verboseMetering;
 
     constructor(
@@ -69,6 +77,7 @@ contract Metering is
     }
 
     modifier manuallyMetered() virtual {
+        initializeCallMetering();
         _;
 
         assembly ("memory-safe") {
@@ -78,17 +87,26 @@ contract Metering is
             log1(0, 0, sub(g, gas()))
             return(0, 0)
         }
-        // vm.resumeGasMetering();
     }
 
+    /**
+     * @notice Set up a test contract for real-world gas metering. Should be called
+     *         first in the setUp() method.
+     * @param verbose Enables more verbose logging
+     */
     function setUpMetering(bool verbose) internal {
         vm.pauseGasMetering();
         verboseMetering = verbose;
     }
 
+    /**
+     * @notice Set up an individual test method for real-world gas metering. Should
+     *         be called first thing in a test.
+     */
     function initializeCallMetering() internal {
+        // warm the gas consumer address, or else AccessAccounting will overcharge
+        // for the call to burn the makeup gas.
         makeAndMarkWarm(INVALID_ADDRESS);
-        // makeAndMarkWarm(VM_ADDRESS);
         vm.startStateDiffRecording();
     }
 
@@ -177,7 +195,7 @@ contract Metering is
 
         diffs = vm.stopAndReturnStateDiff();
         GasMeasurements memory measurements = processAccountAccesses(to, diffs);
-        uint256 makeup = calcGasToBurn(
+        (uint256 makeup, uint256 finalRefund) = calcGasToBurn(
             int256(overheadGasCost),
             int256(observedGas) - METER_OVERHEAD,
             int256(measurements.evmGas),
@@ -188,6 +206,13 @@ contract Metering is
         );
 
         if (verboseMetering) {
+            emit log_named_int(
+                "target gas",
+                int256(observedGas) - int256(METER_OVERHEAD)
+                    + int256(measurements.adjustedGas) - int256(measurements.evmGas)
+                    - int256(measurements.adjustedRefund) + int256(overheadGasCost)
+            );
+
             emit log_named_uint("tx overhead gas", overheadGasCost);
             emit log_named_uint("observed gas", observedGas);
             emit log_named_int(
@@ -201,8 +226,7 @@ contract Metering is
         }
         uint256 start = gasleft();
         consumeAndMeterGas(makeup);
-        emit log_named_uint("consume cost", start - gasleft());
-        // emit log_named_uint("after consume", start - gasleft());
-        return (observedGas + makeup, data);
+        return
+            (observedGas + makeup + uint256(ALL_OVERHEAD) - finalRefund, data);
     }
 }

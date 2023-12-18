@@ -23,7 +23,8 @@ import {
     MAINNET_REFUND_RESTORE_TEMP_NON_ZERO_TO_ZERO_WARM,
     MAINNET_REFUND_RESTORE_TEMP_NON_ZERO_TO_ZERO_COLD,
     MAINNET_REFUND_RESTORE_ORIGINAL_NON_ZERO_WARM,
-    MAINNET_REFUND_RESTORE_ORIGINAL_NON_ZERO_COLD
+    MAINNET_REFUND_RESTORE_ORIGINAL_NON_ZERO_COLD,
+    MAINNET_MAX_REFUND_DENOMINATOR
 } from "./Constants.sol";
 
 /**
@@ -38,7 +39,8 @@ contract MainnetMetering is
             calldataNonZeroByteCost: MAINNET_CALLDATA_NON_ZERO_BYTE_COST,
             flatTxCost: MAINNET_FLAT_TX_COST,
             accessListAddressCost: MAINNET_ACCESS_LIST_ADDRESS_COST,
-            accessListStorageKeyCost: MAINNET_ACCESS_LIST_STORAGE_KEY_COST
+            accessListStorageKeyCost: MAINNET_ACCESS_LIST_STORAGE_KEY_COST,
+            maxRefundDenominator: MAINNET_MAX_REFUND_DENOMINATOR
         }),
         AccessCosts({
             baseAccessCost: MAINNET_BASE_ACCESS_COST,
