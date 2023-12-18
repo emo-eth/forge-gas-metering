@@ -8,7 +8,7 @@ To overload forge gas metering, inherit from one of the `Metering` contracts, an
 
 Then, add the `manuallyMetered` modifier to all tests. **Note that forge will report huge numbers for all tests that do not include this modifier or else call `vm.resumeGasMetering` on their own.**
 
-Within a test, perform setup and assertions as normal, but wrap calls you wish to meter with either the `meterCall` or `meterCallAndLog` methods. This requires manually encoding the calldata to pass
+Within a test, perform setup and assertions as normal, but wrap calls you wish to meter with either the `meterCall` or `meterCallAndLog` methods. This requires manually encoding the calldata to pass to the fuction.
 
 Here is a simple example:
 
