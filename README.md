@@ -44,4 +44,4 @@ See `MainnetMetering` and `OpStackMetering` for examples of how to configure the
 
 Metering is imperfect – it will be off by up to 200 gas. Ideally, it should over-count gas, but this seems to vary per test contract and compiler settings. The `OVERHEAD` constants in `Metering.sol` can probably be better finetuned to account for this.
 
-There are probably bugs.
+**There are probably (many) bugs.**
