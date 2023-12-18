@@ -8,10 +8,12 @@ import {
     AccessCosts,
     GasMeasurements
 } from "./Structs.sol";
-import {Test, Vm} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Test.sol";
 import {TransactionOverheadUtils} from "./TransactionOverheadUtils.sol";
 import {GasConsumer} from "./GasConsumer.sol";
 import {AccessAccounting} from "./AccessAccounting.sol";
+
+import {console2} from "forge-std/console2.sol";
 
 /**
  * @title Metering
@@ -27,12 +29,7 @@ import {AccessAccounting} from "./AccessAccounting.sol";
  *           and value
  *
  */
-contract Metering is
-    TransactionOverheadUtils,
-    GasConsumer,
-    AccessAccounting,
-    Test
-{
+contract Metering is TransactionOverheadUtils, GasConsumer, AccessAccounting {
     /// @dev approximate additional overhead of calling the target account that
     /// is not accounted for by AccessAccounting
     int256 constant METER_OVERHEAD = 31;
@@ -52,6 +49,7 @@ contract Metering is
     uint256 constant START_STATE_DIFF = 0xcf22e3c9;
     /// @dev convenience constant to access the HEVM address in assembly
     uint256 constant VM = 0x007109709ecfa91a80626ff3989d68f67f5b1dd12d;
+    Vm private constant vm = Vm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
     /// @dev When true, log more granular information about makeup gas
     bool verboseMetering;
@@ -139,7 +137,7 @@ contract Metering is
     ) internal returns (uint256, bytes memory) {
         (uint256 gasUsed, bytes memory data) =
             meterCall(to, callData, value, transaction);
-        emit log_named_uint(string.concat(message, " gas used"), gasUsed);
+        console2.log(string.concat(message, " gas used"), gasUsed);
         return (gasUsed, data);
     }
 
@@ -206,23 +204,23 @@ contract Metering is
         );
 
         if (verboseMetering) {
-            emit log_named_int(
+            console2.log(
                 "target gas",
                 int256(observedGas) - int256(METER_OVERHEAD)
                     + int256(measurements.adjustedGas) - int256(measurements.evmGas)
                     - int256(measurements.adjustedRefund) + int256(overheadGasCost)
             );
 
-            emit log_named_uint("tx overhead gas", overheadGasCost);
-            emit log_named_uint("observed gas", observedGas);
-            emit log_named_int(
+            console2.log("tx overhead gas", overheadGasCost);
+            console2.log("observed gas", observedGas);
+            console2.log(
                 "adjusted account + storage gas", measurements.adjustedGas
             );
-            emit log_named_int("extra overhead gas", ALL_OVERHEAD);
-            emit log_named_int("evm account + storage gas", measurements.evmGas);
-            emit log_named_int("evm refund", measurements.evmRefund);
-            emit log_named_int("adjusted refund", measurements.adjustedRefund);
-            emit log_named_uint("makeup gas", makeup);
+            console2.log("extra overhead gas", ALL_OVERHEAD);
+            console2.log("evm account + storage gas", measurements.evmGas);
+            console2.log("evm refund", measurements.evmRefund);
+            console2.log("adjusted refund", measurements.adjustedRefund);
+            console2.log("makeup gas", makeup);
         }
         uint256 start = gasleft();
         consumeAndMeterGas(makeup);

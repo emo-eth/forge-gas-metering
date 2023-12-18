@@ -6,7 +6,7 @@ import {MainnetMetering} from "../src/MainnetMetering.sol";
 import {TestERC20} from "./helpers/TestERC20.sol";
 import {TokenTransferrer} from "./helpers/TokenTransferrer.sol";
 
-contract MeteringTest is MainnetMetering {
+contract MeteringTest is MainnetMetering, Test {
     uint256 thing;
     TestERC20 token1;
     TestERC20 token2;

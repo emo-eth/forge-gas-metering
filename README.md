@@ -19,7 +19,7 @@ pragma solidity ^0.8.22;
 import {Test} from "forge-std/Test.sol";
 import {MainnetMetering} from "src/MainnetMetering.sol";
 
-contract MeteringTest is MainnetMetering {
+contract MeteringTest is MainnetMetering, Test {
     function setUp() public {
         setUpMetering({verbose: false});
     }

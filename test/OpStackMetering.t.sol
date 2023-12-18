@@ -6,7 +6,7 @@ import {OpStackMetering} from "src/OpStackMetering.sol";
 import {TestERC20} from "./helpers/TestERC20.sol";
 import {TokenTransferrer} from "./helpers/TokenTransferrer.sol";
 
-contract OpStackMeteringTest is OpStackMetering {
+contract OpStackMeteringTest is OpStackMetering, Test {
     TestERC20 token1;
     TestERC20 token2;
     TokenTransferrer transferrer;
