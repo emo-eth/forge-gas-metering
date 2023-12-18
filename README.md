@@ -30,7 +30,7 @@ contract MeteringTest is Metering {
             callData: hex"000001",
             value: 0,
             transaction: true,
-            message: "manual"
+            message: "myFunction"
         });
     }
 }
