@@ -29,7 +29,7 @@ import {console2} from "forge-std/console2.sol";
  *           and value
  *
  */
-contract Metering is TransactionOverheadUtils, GasConsumer, AccessAccounting {
+contract Metering is TransactionOverheadUtils, GasConsumer {
     /// @dev approximate additional overhead of calling the target account that
     /// is not accounted for by AccessAccounting
     int256 constant METER_OVERHEAD = 31;
@@ -57,7 +57,7 @@ contract Metering is TransactionOverheadUtils, GasConsumer, AccessAccounting {
     constructor(
         NetworkTxCosts memory networkTxCosts,
         AccessCosts memory accessCosts
-    ) TransactionOverheadUtils(networkTxCosts) AccessAccounting(accessCosts) {}
+    ) TransactionOverheadUtils(networkTxCosts, accessCosts) {}
 
     /**
      * @notice Meter gas consumed by a function, and then pause gas metering
@@ -222,7 +222,6 @@ contract Metering is TransactionOverheadUtils, GasConsumer, AccessAccounting {
             console2.log("adjusted refund", measurements.adjustedRefund);
             console2.log("makeup gas", makeup);
         }
-        uint256 start = gasleft();
         consumeAndMeterGas(makeup);
         return
             (observedGas + makeup + uint256(ALL_OVERHEAD) - finalRefund, data);

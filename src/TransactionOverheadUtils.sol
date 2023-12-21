@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
-import {AccessListEntry, TransactionData, NetworkTxCosts} from "./Structs.sol";
+import {AccessAccounting} from "./AccessAccounting.sol";
+import {
+    AccessListEntry,
+    TransactionData,
+    NetworkTxCosts,
+    AccessCosts
+} from "./Structs.sol";
 import {console2} from "forge-std/console2.sol";
 
 /**
@@ -9,7 +15,7 @@ import {console2} from "forge-std/console2.sol";
  * @author emo.eth
  * @notice Utils for calculating transaction overhead.
  */
-contract TransactionOverheadUtils {
+contract TransactionOverheadUtils is AccessAccounting {
     uint256 immutable CALLDATA_ZERO_BYTE_COST;
     uint256 immutable CALLDATA_NON_ZERO_BYTE_COST;
     uint256 immutable FLAT_TX_COST;
@@ -17,7 +23,10 @@ contract TransactionOverheadUtils {
     uint256 immutable ACCESS_LIST_STORAGE_KEY_COST;
     int256 immutable MAX_REFUND_DENOM;
 
-    constructor(NetworkTxCosts memory networkTxCosts) {
+    constructor(
+        NetworkTxCosts memory networkTxCosts,
+        AccessCosts memory accessCosts
+    ) AccessAccounting(accessCosts) {
         CALLDATA_ZERO_BYTE_COST = networkTxCosts.calldataZeroByteCost;
         CALLDATA_NON_ZERO_BYTE_COST = networkTxCosts.calldataNonZeroByteCost;
         FLAT_TX_COST = networkTxCosts.flatTxCost;

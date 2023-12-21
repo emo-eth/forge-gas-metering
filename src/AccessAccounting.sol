@@ -3,7 +3,7 @@ pragma solidity ^0.8.17;
 
 import {Test, Vm} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {AccessCosts, GasMeasurements} from "./Structs.sol";
+import {AccessCosts, GasMeasurements, AccessListEntry} from "./Structs.sol";
 
 /**
  * @title AccessAccounting
@@ -35,16 +35,18 @@ contract AccessAccounting {
     bool seenTarget;
 
     struct SlotStatus {
-        bool needsWarmAdjustment;
-        bool seen;
+        bool warmedBySetup;
+        bool touched;
         bool isWarm;
+        bool warmedByAccessList;
         bytes32 evmOriginalValue;
         bytes32 testOriginalValue;
     }
 
     struct AccountStatus {
-        bool needsWarmAdjustment;
+        bool warmedBySetup;
         bool isWarm;
+        bool warmedByAccessList;
     }
 
     struct AccessAccountingStorage {
@@ -83,8 +85,31 @@ contract AccessAccounting {
             x := balance(account)
         }
         AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
-        slotMap.accountStatus[account] =
-            AccountStatus({needsWarmAdjustment: false, isWarm: true});
+        slotMap.accountStatus[account] = AccountStatus({
+            warmedBySetup: false,
+            isWarm: true,
+            warmedByAccessList: false
+        });
+    }
+
+    function processAccessList(AccessListEntry[] memory accessList) internal {
+        for (uint256 i; i < accessList.length; ++i) {
+            processAccessListEntry(accessList[i]);
+        }
+    }
+
+    function processAccessListEntry(AccessListEntry memory entry) internal {
+        AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
+        address accessedAccount = entry.account;
+        AccountStatus storage accountStatus =
+            slotMap.accountStatus[accessedAccount];
+        accountStatus.warmedByAccessList = true;
+        bytes32[] memory storageAccesses = entry.storageKeys;
+        for (uint256 i; i < storageAccesses.length; ++i) {
+            SlotStatus storage slotStatus =
+                slotMap.slotStatus[accessedAccount][storageAccesses[i]];
+            slotStatus.warmedByAccessList = true;
+        }
     }
 
     /**
@@ -126,7 +151,7 @@ contract AccessAccounting {
         AccountStatus storage accountStatus =
             slotMap.accountStatus[accessedAccount];
         if (!isPrecompile(access.account)) {
-            accountStatus.needsWarmAdjustment = true;
+            accountStatus.warmedBySetup = true;
         }
         Vm.StorageAccess[] memory storageAccesses = access.storageAccesses;
         for (uint256 i; i < storageAccesses.length; ++i) {
@@ -143,12 +168,11 @@ contract AccessAccounting {
             slotMap.slotStatus[accessedAccount][accessedSlot];
         // don't do anything if access was reverted
         if (!access.reverted) {
-            if (!slotStatus.seen) {
-                slotStatus.needsWarmAdjustment = true;
-                slotStatus.seen = true;
+            if (!slotStatus.touched && !slotStatus.warmedByAccessList) {
+                slotStatus.warmedBySetup = true;
+                slotStatus.touched = true;
                 slotStatus.evmOriginalValue = access.previousValue;
             }
-            //
             slotStatus.testOriginalValue = access.newValue;
         }
     }
@@ -159,10 +183,10 @@ contract AccessAccounting {
         bool test
     ) internal returns (bytes32) {
         // if this is the first time the slot has been seen, assume the access.previousValue is also its original value.
-        if (!slotStatus.seen) {
+        if (!slotStatus.touched) {
             slotStatus.evmOriginalValue = access.previousValue;
             slotStatus.testOriginalValue = access.previousValue;
-            slotStatus.seen = true;
+            slotStatus.touched = true;
         }
         return
             (test) ? slotStatus.testOriginalValue : slotStatus.evmOriginalValue;
@@ -229,15 +253,16 @@ contract AccessAccounting {
             // however, assume the evm charges standard gas for the call;
             // the difference will be accounted for by the burned makeup gas.
             evmGas = COST_BASE_ACCESS;
-            evmGas += (accountStatus.needsWarmAdjustment)
+            evmGas += (accountStatus.warmedBySetup)
                 ? int256(0)
                 : COST_COLD_ACCOUNT_ACCESS;
             evmGas += (access.value > 0 && !access.initialized)
                 ? COST_INITIALIZE_ACCOUNT
                 : int256(0);
             // warm up target account
-            accountStatus.needsWarmAdjustment = false;
+            accountStatus.warmedBySetup = false;
             accountStatus.isWarm = true;
+            accountStatus.warmedByAccessList = false;
         } else {
             evmGas = adjustedGas = COST_BASE_ACCESS;
 
@@ -255,34 +280,51 @@ contract AccessAccounting {
                 }
             }
 
-            if (
-                (accountStatus.needsWarmAdjustment || !accountStatus.isWarm)
-                    && !isPrecompile(access.account)
-            ) {
-                // create and resume do not pay extra gas for cold accounts
-                if (
-                    !(
-                        access.kind == VmSafe.AccountAccessKind.Create
-                            || access.kind == VmSafe.AccountAccessKind.Resume
-                    )
+            if (!isPrecompile(access.account)) {
+                if ((accountStatus.warmedBySetup || !accountStatus.isWarm)) {
+                    // create and resume do not pay extra gas for cold accounts
+                    if (
+                        !(
+                            access.kind == VmSafe.AccountAccessKind.Create
+                                || access.kind == VmSafe.AccountAccessKind.Resume
+                        )
+                    ) {
+                        adjustedGas += (accountStatus.warmedByAccessList)
+                            ? int256(0)
+                            : COST_COLD_ACCOUNT_ACCESS;
+                        // only add cold surcharge to evmGas if the account was not warmed by set-up
+                        evmGas += (accountStatus.warmedBySetup)
+                            ? int256(0)
+                            : COST_COLD_ACCOUNT_ACCESS;
+                    }
+                    // If this is the first time the account is accessed, and the
+                    // callframe did not revert, or if the account was the target of a
+                    // CREATE, mark it as warmed and reset needsWarmAdjusment.
+                    // TODO: technically, only a CREATE from a non-reverted frame should warm the account
+                    // eg, if a CREATE reverts _within_ a reverting frame, the account should not be warmed (I think)
+                    if (
+                        !access.reverted
+                            || access.kind == VmSafe.AccountAccessKind.Create
+                    ) {
+                        accountStatus.isWarm = true;
+                        accountStatus.warmedBySetup = false;
+                        accountStatus.warmedByAccessList = false;
+                    }
+                } else if (
+                    accountStatus.warmedByAccessList && !access.reverted
+                        && !(
+                            access.kind == VmSafe.AccountAccessKind.Create
+                                || access.kind == VmSafe.AccountAccessKind.Resume
+                        )
                 ) {
-                    adjustedGas += COST_COLD_ACCOUNT_ACCESS;
-                    // only add cold surcharge to evmGas if the account was not warmed by set-up
-                    evmGas += (accountStatus.needsWarmAdjustment)
+                    // if the account was warmed by the access list, but not by set-up,
+                    // charge the cold surcharge to the EVM, but not to the adjusted gas
+                    evmGas += (accountStatus.warmedBySetup)
                         ? int256(0)
                         : COST_COLD_ACCOUNT_ACCESS;
-                }
-                // If this is the first time the account is accessed, and the
-                // callframe did not revert, or if the account was the target of a
-                // CREATE, mark it as warmed and reset needsWarmAdjusment.
-                // TODO: technically, only a CREATE from a non-reverted frame should warm the account
-                // eg, if a CREATE reverts _within_ a reverting frame, the account should not be warmed (I think)
-                if (
-                    !access.reverted
-                        || access.kind == VmSafe.AccountAccessKind.Create
-                ) {
-                    accountStatus.needsWarmAdjustment = false;
                     accountStatus.isWarm = true;
+                    accountStatus.warmedByAccessList = false;
+                    accountStatus.warmedBySetup = false;
                 }
             }
         }
@@ -328,15 +370,17 @@ contract AccessAccounting {
         // if doing an SLOAD, just account for the cold surcharge, and do nothing with refunds
         if (!access.isWrite) {
             evmGas = adjustedGas = COST_BASE_ACCESS;
-            if (slotStatus.needsWarmAdjustment || !slotStatus.isWarm) {
-                adjustedGas += COST_COLD_SLOAD;
-                // only add cold surcharge to evmGas if the slot was not warmed by set-up
-                evmGas += (slotStatus.needsWarmAdjustment)
+            if (slotStatus.warmedBySetup || !slotStatus.isWarm) {
+                adjustedGas += (slotStatus.warmedByAccessList)
                     ? int256(0)
                     : COST_COLD_SLOAD;
+                // only add cold surcharge to evmGas if the slot was not warmed by set-up
+                evmGas +=
+                    (slotStatus.warmedBySetup) ? int256(0) : COST_COLD_SLOAD;
                 if (!access.reverted) {
-                    slotStatus.needsWarmAdjustment = false;
                     slotStatus.isWarm = true;
+                    slotStatus.warmedBySetup = false;
+                    slotStatus.warmedByAccessList = false;
                 }
             }
         } else {
@@ -354,18 +398,22 @@ contract AccessAccounting {
                 access: access,
                 test: true
             });
-            bool evmWarm = slotStatus.isWarm || slotStatus.needsWarmAdjustment;
+            bool evmWarm = slotStatus.isWarm || slotStatus.warmedBySetup;
             bytes32 currentValue = access.previousValue;
             bytes32 newValue = access.newValue;
             (evmGas, evmRefund) = calcSstoreCost(
                 evmWarm, evmOriginalValue, currentValue, newValue
             );
             (adjustedGas, adjustedRefund) = calcSstoreCost(
-                slotStatus.isWarm, testOriginalValue, currentValue, newValue
+                slotStatus.isWarm || slotStatus.warmedByAccessList,
+                testOriginalValue,
+                currentValue,
+                newValue
             );
             if (!access.reverted) {
                 slotStatus.isWarm = true;
-                slotStatus.needsWarmAdjustment = false;
+                slotStatus.warmedBySetup = false;
+                slotStatus.warmedByAccessList = false;
             }
         }
         return (evmGas, adjustedGas, evmRefund, adjustedRefund);
