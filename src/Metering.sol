@@ -202,14 +202,11 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
             measurements.adjustedRefund,
             ALL_OVERHEAD
         );
-
+        int256 targetGas = int256(observedGas) - int256(METER_OVERHEAD)
+            + int256(measurements.adjustedGas) - int256(measurements.evmGas)
+            - int256(measurements.adjustedRefund) + int256(overheadGasCost);
         if (verboseMetering) {
-            console2.log(
-                "target gas",
-                int256(observedGas) - int256(METER_OVERHEAD)
-                    + int256(measurements.adjustedGas) - int256(measurements.evmGas)
-                    - int256(measurements.adjustedRefund) + int256(overheadGasCost)
-            );
+            console2.log("target gas", targetGas);
 
             console2.log("tx overhead gas", overheadGasCost);
             console2.log("observed gas", observedGas);
@@ -223,7 +220,6 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
             console2.log("makeup gas", makeup);
         }
         consumeAndMeterGas(makeup);
-        return
-            (observedGas + makeup + uint256(ALL_OVERHEAD) - finalRefund, data);
+        return (uint256(targetGas), data);
     }
 }
