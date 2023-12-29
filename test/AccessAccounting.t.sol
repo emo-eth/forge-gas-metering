@@ -2,9 +2,9 @@
 pragma solidity ^0.8.17;
 
 import {Vm, Test} from "forge-std/Test.sol";
-import {AccessAccounting} from "src/./AccessAccounting.sol";
+import {AccessAccounting} from "../src/AccessAccounting.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {AccessCosts, GasMeasurements} from "src/./Structs.sol";
+import {AccessCosts, GasMeasurements} from "../src/Structs.sol";
 
 import {
     MAINNET_BASE_ACCESS_COST,
