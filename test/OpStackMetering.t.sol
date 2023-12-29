@@ -2,7 +2,7 @@
 pragma solidity ^0.8.17;
 
 import {Test} from "forge-std/Test.sol";
-import {OpStackMetering} from "src/OpStackMetering.sol";
+import {OpStackMetering} from "../src/OpStackMetering.sol";
 import {TestERC20} from "./helpers/TestERC20.sol";
 import {TokenTransferrer} from "./helpers/TokenTransferrer.sol";
 
