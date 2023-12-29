@@ -217,6 +217,7 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
             console2.log("evm account + storage gas", measurements.evmGas);
             console2.log("evm refund", measurements.evmRefund);
             console2.log("adjusted refund", measurements.adjustedRefund);
+            console2.log("final refund", finalRefund);
             console2.log("makeup gas", makeup);
         }
         consumeAndMeterGas(makeup);
