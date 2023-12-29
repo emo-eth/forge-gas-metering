@@ -13,7 +13,8 @@ import {AccessCosts, GasMeasurements, AccessListEntry} from "./Structs.sol";
  *         TODO: Support multiple forks/chainId accounting.
  */
 contract AccessAccounting {
-    bytes32 immutable ACCESS_ACCOUNTING_SLOT = keccak256("AccessAccounting");
+    uint256 constant ACCESS_ACCOUNTING_SLOT =
+        uint256(keccak256("AccessAccounting")) - 1;
     int256 immutable COST_BASE_ACCESS;
     int256 immutable COST_COLD_ACCOUNT_ACCESS;
     int256 immutable COST_COLD_SLOAD;
@@ -31,24 +32,42 @@ contract AccessAccounting {
     int256 immutable REFUND_RESTORE_ORIGINAL_NONZERO_COLD;
     address private constant HEVM_ADDRESS =
         0x7109709ECfa91a80626fF3989D68f67F5b1DD12D;
+    Vm private constant vm = Vm(HEVM_ADDRESS);
 
+    ///@notice Track the first time the target account is called.
+    ///        When measuring tx-level gas, the initial call to the target
+    ///        account should not incur any gas cost. Subsequent calls to the
+    ///        target should incur a warm surcharge.
     bool seenTarget;
 
+    ///@notice Struct to hold metadata about storage slot warmth and state for gas accounting purposes
     struct SlotStatus {
-        bool warmedBySetup;
-        bool touched;
+        ///@notice Whether the slot should be considered warm for the purposes of gas accounting
         bool isWarm;
+        ///@notice Whether the slot was warmed by the test setup
+        bool warmedBySetup;
+        ///@notice Whether the slot should be considered warmed via access list
         bool warmedByAccessList;
+        ///@notice Whether the slot has been processed, used to determine which value to use as evmOriginalValue
+        bool touched;
+        ///@notice The original value of the slot as considered by the EVM. Unless the test is running in a forked environment, this will always be zero.
+        ///        Used for gas refund accounting.
         bytes32 evmOriginalValue;
+        ///@notice What the manual accounting should consider the original value of the slot for refund accounting purposes.
         bytes32 testOriginalValue;
     }
 
+    ///@notice Struct to hold metadata about account warmth for gas accounting purposes
     struct AccountStatus {
-        bool warmedBySetup;
+        ///@notice Whether the account should be considered warm for the purposes of gas accounting
         bool isWarm;
+        ///@notice Whether the account was warmed by the test setup
+        bool warmedBySetup;
+        ///@notice Whether the account should be considered warmed via access list
         bool warmedByAccessList;
     }
 
+    ///@notice Struct to hold the storage for this contract
     struct AccessAccountingStorage {
         mapping(address account => AccountStatus status) accountStatus;
         mapping(
@@ -80,6 +99,12 @@ contract AccessAccounting {
             costs.refundRestoreOriginalNonZeroCold;
     }
 
+    /**
+     * @notice Make an account warm (by calling balance on it) and mark it internally as warm.
+     *         Manually warmed accounts will not incur cold surcharges.
+     * @param account The account to mark as warmed.
+     * @return x The balance of the account, so the opcode is not optimized away.
+     */
     function makeAndMarkWarm(address account) internal returns (uint256 x) {
         assembly {
             x := balance(account)
@@ -92,12 +117,64 @@ contract AccessAccounting {
         });
     }
 
+    /**
+     * @notice Make an account and slot warm by calling vm.load and mark both internally as warm.
+     * @param account The account to mark as warmed.
+     * @param slot The slot to mark as warmed.
+     * @return val The value of the warmed slot.
+     */
+    function makeAndMarkWarm(address account, bytes32 slot)
+        internal
+        returns (bytes32 val)
+    {
+        val = vm.load({target: account, slot: slot});
+
+        AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
+        slotMap.accountStatus[account] = AccountStatus({
+            warmedBySetup: false,
+            isWarm: true,
+            warmedByAccessList: false
+        });
+        slotMap.slotStatus[account][slot] = SlotStatus({
+            isWarm: true,
+            warmedBySetup: false,
+            warmedByAccessList: false,
+            touched: true,
+            evmOriginalValue: val,
+            testOriginalValue: val
+        });
+    }
+
+    /**
+     * @notice Load an arbitrary slot from an account, and mark it as warm.
+     * @dev Using vm.load marks both account and slot as warm, but will not
+     *      show up in the state diff.
+     *      TODO: handle loadAllocs as well
+     * @param target The target account
+     * @param slot The target slot to load
+     * @return val The value of the slot
+     */
+    function safeLoad(address target, bytes32 slot)
+        internal
+        returns (bytes32 val)
+    {
+        return makeAndMarkWarm(target, slot);
+    }
+
+    /**
+     * @notice Process an access list, marking accounts and slots as warmed by the list.
+     * @param accessList The access list to process.
+     */
     function processAccessList(AccessListEntry[] memory accessList) internal {
         for (uint256 i; i < accessList.length; ++i) {
             processAccessListEntry(accessList[i]);
         }
     }
 
+    /**
+     * @notice Process an individual access list entry.
+     * @param entry The access list entry to process.
+     */
     function processAccessListEntry(AccessListEntry memory entry) internal {
         AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
         address accessedAccount = entry.account;
@@ -117,22 +194,27 @@ contract AccessAccounting {
      */
     function getAccessAccountingStorage()
         internal
-        view
+        pure
         returns (AccessAccountingStorage storage)
     {
         // TODO: support multiple forks by parameterizing this function
         uint256 forkId = 0;
-        bytes32 slot = ACCESS_ACCOUNTING_SLOT;
-        AccessAccountingStorage storage slotMap;
+        uint256 slot = ACCESS_ACCOUNTING_SLOT;
+        AccessAccountingStorage storage accountingStorage;
         assembly {
             mstore(0x00, forkId)
             mstore(0x20, slot)
-            slotMap.slot := keccak256(0x00, 0x40)
+            accountingStorage.slot := keccak256(0x00, 0x40)
         }
-        return slotMap;
+        return accountingStorage;
     }
 
-    function preprocessAccesses(Vm.AccountAccess[] memory accesses)
+    /**
+     * @notice Preprocess a list of account-level accesses, marking accounts and slots as warmed by setup.
+     * @dev    Should be called after all test setup, and before the call to be metered.
+     * @param accesses The account-level accesses to preprocess.
+     */
+    function preprocessAccountAccesses(Vm.AccountAccess[] memory accesses)
         public
         returns (Vm.AccountAccess[] memory)
     {
@@ -142,10 +224,11 @@ contract AccessAccounting {
         return accesses;
     }
 
-    function preprocessAccess(Vm.AccountAccess memory access)
-        public
-        returns (Vm.AccountAccess memory)
-    {
+    /**
+     * @notice Preprocess an account-level access, marking accounts and slots as warmed by setup.
+     * @param access The account-level access to preprocess.
+     */
+    function preprocessAccess(Vm.AccountAccess memory access) private {
         AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
         address accessedAccount = access.account;
         AccountStatus storage accountStatus =
@@ -157,10 +240,14 @@ contract AccessAccounting {
         for (uint256 i; i < storageAccesses.length; ++i) {
             preprocessStorageAccess(storageAccesses[i]);
         }
-        return access;
     }
 
-    function preprocessStorageAccess(Vm.StorageAccess memory access) public {
+    /**
+     * @notice Preprocess a storage access, marking slots as warmed by setup and
+     *         noting current + original values.
+     * @param access The storage access to preprocess.
+     */
+    function preprocessStorageAccess(Vm.StorageAccess memory access) private {
         AccessAccountingStorage storage slotMap = getAccessAccountingStorage();
         address accessedAccount = access.account;
         bytes32 accessedSlot = access.slot;
@@ -177,11 +264,18 @@ contract AccessAccounting {
         }
     }
 
+    /**
+     * @notice Get the "original" value of a slot for the purposes of gas refund accounting, according to either the EVM or the test.
+     * @param slotStatus The slot status struct for the slot.
+     * @param access The storage access to process.
+     * @param test Whether to return the value that the EVM considers the original value, or what the test context should consider the original value.
+     * @return The "original" value of the slot.
+     */
     function getOriginalSlotValue(
         SlotStatus storage slotStatus,
         Vm.StorageAccess memory access,
         bool test
-    ) internal returns (bytes32) {
+    ) private returns (bytes32) {
         // if this is the first time the slot has been seen, assume the access.previousValue is also its original value.
         if (!slotStatus.touched) {
             slotStatus.evmOriginalValue = access.previousValue;
@@ -192,6 +286,12 @@ contract AccessAccounting {
             (test) ? slotStatus.testOriginalValue : slotStatus.evmOriginalValue;
     }
 
+    /**
+     * @notice Process the list of account-level accesses incurred during a metered call.
+     * @param target If doing tx-level metering, the target account of the tx. The first access of this account will not incur either a cold or warm surcharge. Subsequent accesses will incur a warm surcharge.
+     * @param accesses The account-level accesses to process as a result of the call.
+     * @return measurements The gas measurements for the call.
+     */
     function processAccountAccesses(
         address target,
         Vm.AccountAccess[] memory accesses
@@ -218,19 +318,18 @@ contract AccessAccounting {
 
     /**
      * @notice Process the account-level access, including all storage accesses.
-     *
      *         If an account was warmed by set-up, the cold surcharge will added to
      *         extraGas only the first time the account is accessed.
      *         If the access callframe did not revert, the account will be marked as warmed.
-     *               Actual and adjusted gas and refunds are calculate separately because of EVM behavior around refunds.
-     *               As of London hard fork, the EVM limits refunds to 1/5 tx cost, and only gives refunds for SSTOREs.
+     *         Actual and adjusted gas and refunds are calculate separately because of EVM behavior around refunds.
+     *         As of London hard fork, the EVM limits refunds to 1/5 tx cost, and only gives refunds for SSTOREs.
      * @param access The account-level access to process, including all storage accesses.
      */
     function processAccountAccess(
         address target,
         Vm.AccountAccess memory access
     )
-        public
+        private
         returns (
             int256 evmGas,
             int256 adjustedGas,
@@ -354,7 +453,7 @@ contract AccessAccounting {
      * @return adjustedRefund The amount of refund that would have been given by the EVM if the slot were cold and started with its correct value.
      */
     function processStorageAccess(Vm.StorageAccess memory access)
-        public
+        private
         returns (
             int256 evmGas,
             int256 adjustedGas,
@@ -419,12 +518,19 @@ contract AccessAccounting {
         return (evmGas, adjustedGas, evmRefund, adjustedRefund);
     }
 
+    /**
+     * @notice Calculate the gas used by an SSTORE as well as any incurred refunds.
+     * @param warm Whether the slot is warm.
+     * @param originalValue The original (pre-tx) value of the slot.
+     * @param currentValue The current value of the slot.
+     * @param newValue The new value of the slot.
+     */
     function calcSstoreCost(
         bool warm,
         bytes32 originalValue,
         bytes32 currentValue,
         bytes32 newValue
-    ) public view returns (int256 baseDynamicGas, int256 gasRefund) {
+    ) private view returns (int256 baseDynamicGas, int256 gasRefund) {
         return (
             calcSstoreBaseDynamicGas(
                 warm, originalValue, currentValue, newValue
@@ -445,7 +551,7 @@ contract AccessAccounting {
         bytes32 originalValue,
         bytes32 currentValue,
         bytes32 newValue
-    ) public view virtual returns (int256 baseDynamicGas) {
+    ) internal view virtual returns (int256 baseDynamicGas) {
         if (newValue == currentValue) {
             if (warm) {
                 baseDynamicGas = COST_BASE_ACCESS;
@@ -476,7 +582,7 @@ contract AccessAccounting {
         bytes32 originalValue,
         bytes32 currentValue,
         bytes32 newValue
-    ) public view virtual returns (int256 gasRefund) {
+    ) internal view virtual returns (int256 gasRefund) {
         if (newValue != currentValue) {
             if (currentValue == originalValue) {
                 if (originalValue != 0 && newValue == 0) {
@@ -511,7 +617,12 @@ contract AccessAccounting {
      * @notice Check if an account is a precompile. Override with different logic depending on network and hard fork.
      * @param account The account to check.
      */
-    function isPrecompile(address account) public pure virtual returns (bool) {
+    function isPrecompile(address account)
+        internal
+        view
+        virtual
+        returns (bool)
+    {
         return (account < address(10) && account > address(0))
             || account == HEVM_ADDRESS;
     }

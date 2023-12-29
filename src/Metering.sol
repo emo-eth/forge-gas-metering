@@ -12,7 +12,6 @@ import {Vm} from "forge-std/Test.sol";
 import {TransactionOverheadUtils} from "./TransactionOverheadUtils.sol";
 import {GasConsumer} from "./GasConsumer.sol";
 import {AccessAccounting} from "./AccessAccounting.sol";
-
 import {console2} from "forge-std/console2.sol";
 
 /**
@@ -161,7 +160,7 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
             (transaction) ? getCallOverhead(to, callData) : 0;
 
         Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
-        preprocessAccesses(diffs);
+        preprocessAccountAccesses(diffs);
         // track evm gas usage
         uint256 observedGas;
         uint256 returndataSize;

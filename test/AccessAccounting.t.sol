@@ -23,28 +23,7 @@ import {
     MAINNET_REFUND_RESTORE_ORIGINAL_NON_ZERO_WARM,
     MAINNET_REFUND_RESTORE_ORIGINAL_NON_ZERO_COLD
 } from "src/Constants.sol";
-
-contract Writer {
-    function write(bytes32 slot, bytes32 newVal) public {
-        assembly {
-            sstore(slot, newVal)
-        }
-    }
-
-    function read(bytes32 slot) public view returns (bytes32) {
-        bytes32 val;
-        assembly {
-            val := sload(slot)
-        }
-        return val;
-    }
-
-    function call(bytes calldata) public {}
-
-    function _revert() public pure {
-        revert("revert");
-    }
-}
+import {Writer} from "./Writer.sol";
 
 contract AccessAccountingTest is Test {
     Writer writer;
@@ -89,7 +68,7 @@ contract AccessAccountingTest is Test {
 
     function testCallToWarm() public {
         Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
-        target.preprocessAccesses(diffs);
+        target.preprocessAccountAccesses(diffs);
         vm.startStateDiffRecording();
         writer.call("");
         diffs = filterExtcodesize(vm.stopAndReturnStateDiff());
@@ -107,7 +86,7 @@ contract AccessAccountingTest is Test {
     function testReadWarm() public {
         writer.read(bytes32(0));
         Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
-        target.preprocessAccesses(diffs);
+        target.preprocessAccountAccesses(diffs);
         vm.startStateDiffRecording();
         writer.read(bytes32(0));
         diffs = filterExtcodesize(vm.stopAndReturnStateDiff());
@@ -127,7 +106,7 @@ contract AccessAccountingTest is Test {
         writer.write({slot: bytes32(0), newVal: bytes32(uint256(1))});
         Vm.AccountAccess[] memory diffs =
             filterExtcodesize(vm.stopAndReturnStateDiff());
-        target.preprocessAccesses(diffs);
+        target.preprocessAccountAccesses(diffs);
 
         vm.startStateDiffRecording();
         writer.write({slot: bytes32(0), newVal: bytes32(uint256(2))});
@@ -150,7 +129,7 @@ contract AccessAccountingTest is Test {
         }
         Vm.AccountAccess[] memory diffs =
             filterExtcodesize(vm.stopAndReturnStateDiff());
-        target.preprocessAccesses(diffs);
+        target.preprocessAccountAccesses(diffs);
         vm.startStateDiffRecording();
         for (uint256 i = 0; i < 100; i++) {
             writer.write({slot: bytes32(i), newVal: bytes32(uint256(0))});
