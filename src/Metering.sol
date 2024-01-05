@@ -47,7 +47,7 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
     /// @dev selector to call the vm.startStateDiffRecording cheatcode in assembly (to avoid solidity EXTCODSIZE checks)
     uint256 constant START_STATE_DIFF = 0xcf22e3c9;
     /// @dev selector to call the vm.prank cheatcode in assembly
-    uint256 constant PRANK_SELECTOR = 0x332da909;
+    uint256 constant PRANK_SELECTOR = 0xca669fa7;
     /// @dev convenience constant to access the HEVM address in assembly
     uint256 constant VM = 0x007109709ecfa91a80626ff3989d68f67f5b1dd12d;
     Vm private constant vm = Vm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
