@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.14;
 
 import {
     NetworkTxCosts,
@@ -46,6 +46,8 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
     uint256 constant RESUME_GAS_METERING = 0x2bcd50e0;
     /// @dev selector to call the vm.startStateDiffRecording cheatcode in assembly (to avoid solidity EXTCODSIZE checks)
     uint256 constant START_STATE_DIFF = 0xcf22e3c9;
+    /// @dev selector to call the vm.prank cheatcode in assembly
+    uint256 constant PRANK_SELECTOR = 0x9e5c0b8a;
     /// @dev convenience constant to access the HEVM address in assembly
     uint256 constant VM = 0x007109709ecfa91a80626ff3989d68f67f5b1dd12d;
     Vm private constant vm = Vm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
@@ -128,6 +130,7 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
      * @param message A message to prepend to the logged gas usage
      */
     function meterCallAndLog(
+        address from,
         address to,
         bytes memory callData,
         uint256 value,
@@ -135,7 +138,7 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
         string memory message
     ) internal returns (uint256, bytes memory) {
         (uint256 gasUsed, bytes memory data) =
-            meterCall(to, callData, value, transaction);
+            meterCall(from, to, callData, value, transaction);
         console2.log(string.concat(message, " gas used"), gasUsed);
         return (gasUsed, data);
     }
@@ -150,6 +153,7 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
      * @param transaction Whether or not this should add static overhead for a transaction
      */
     function meterCall(
+        address from,
         address to,
         bytes memory callData,
         uint256 value,
@@ -164,6 +168,7 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
         // track evm gas usage
         uint256 observedGas;
         uint256 returndataSize;
+
         assembly ("memory-safe") {
             // call cheatcodes in assembly to avoid solc inserting unnecessary EXTCODESIZE checks
             mstore(0, START_STATE_DIFF)
@@ -171,6 +176,11 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
             mstore(0, RESUME_GAS_METERING)
             pop(call(gas(), VM, 0, 0x1c, 4, 0, 0))
             let startingGas := gas()
+            if iszero(iszero(from)) {
+                mstore(0, PRANK_SELECTOR)
+                mstore(0x20, from)
+                pop(call(gas(), VM, 0, 0x1c, 0x24, 0, 0))
+            }
             let succ :=
                 call(gas(), to, value, add(callData, 0x20), mload(callData), 0, 0)
             let afterGas := gas()

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.14;
 
 uint256 constant MAINNET_CALLDATA_ZERO_BYTE_COST = 4;
 uint256 constant MAINNET_CALLDATA_NON_ZERO_BYTE_COST = 16;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.22;
+pragma solidity ^0.8.14;
 
 import {Test} from "forge-std/Test.sol";
 import {GasConsumer} from "../src/GasConsumer.sol";

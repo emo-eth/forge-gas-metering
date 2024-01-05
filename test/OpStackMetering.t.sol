@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity ^0.8.14;
 
 import {Test} from "forge-std/Test.sol";
 import {OpStackMetering} from "../src/OpStackMetering.sol";
@@ -20,6 +20,7 @@ contract OpStackMeteringTest is OpStackMetering, Test {
 
     function testManualMeteringOp() public manuallyMetered {
         meterCallAndLog({
+            from: address(0),
             to: address(0x123456),
             callData: hex"000001",
             value: 0,
@@ -39,6 +40,7 @@ contract OpStackMeteringTest is OpStackMetering, Test {
             TokenTransferrer.spend, (address(token1), alice, bob, 100)
         );
         meterCallAndLog({
+            from: address(0),
             to: address(transferrer),
             callData: callData,
             value: 0,
