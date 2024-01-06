@@ -162,6 +162,26 @@ contract AccessAccounting {
     }
 
     /**
+     * @notice Store a value in an arbitrary slot from an account, and mark it as warm.
+     *         Note that this will update the testOriginalValue.
+     * @param target The target account
+     * @param slot The target slot to store
+     * @param val The value to store
+     * @return oldVal The old value of the slot
+     */
+    function safeStore(address target, bytes32 slot, bytes32 val)
+        internal
+        returns (bytes32 oldVal)
+    {
+        oldVal = makeAndMarkWarm(target, slot);
+        vm.store({target: target, slot: slot, value: val});
+        SlotStatus storage status =
+            getAccessAccountingStorage().slotStatus[target][slot];
+        status.testOriginalValue = val;
+        return oldVal;
+    }
+
+    /**
      * @notice Process an access list, marking accounts and slots as warmed by the list.
      * @param accessList The access list to process.
      */
