@@ -57,12 +57,24 @@ contract MeteringTest is MainnetMetering, Test {
 }
 ```
 
+## Current Limitations and Caveats
+
+- Currently, `meterCall[AndLog]` is only meant to be called once per test. Calling it multiple times will result in incorrect gas numbers. Multiple calls may be supported in the future.
+    - Currently, test-context account and slot warmth are marked destructively, meaning gas compensation for subsequent calls will be incorrect
+    - Storage refunds are calculated using only the gas metrics of the current call, so storage refund calculations will be incorrect for multiple calls
+- Does not support fork-testing, though this could be possible in the future
+- Has not been tested with snapshotting and reverting forks  `vm.revertTo`
+- Forge tests seem to incur some static gas overhead outside of the test context, and this number may vary depending on project configuration. In this repository, the number is around ~4100 gas, but in yours, it may be different. See the `MYSTERY_TEST_OVERHEAD` constant in [ Metering.sol ](./src/Metering.sol) for more details.
+
+
 ## Configuring
 
 See `MainnetMetering` and `OpStackMetering` for examples of how to configure the base `Metering` contract for different networks.
 
 ## Notes
 
-Metering is imperfect – it will be off by up to 200 gas. Ideally, it should over-count gas, but this seems to vary per test contract and compiler settings. The `OVERHEAD` constants in `Metering.sol` can probably be better finetuned to account for this.
+Metering is imperfect – in this repository, it is off by up to 200 gas using different compiler settings. Other repositories might have more Forge test overhead that I am currently unaware of how to compensate for. Logged gas numbers using `meterCallAndLog` should be extremely close to accurate, but the number reported by the Forge test runner may be off.
+
+Ideally, this library should over-count gas, but behavior seems to vary per test contract and compiler settings. The `OVERHEAD` and `MYSTERY_TEST_OVERHEAD` constants in `Metering.sol` can probably be better finetuned to account for this.
 
 **There are probably (many) bugs.**

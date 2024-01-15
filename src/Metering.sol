@@ -35,7 +35,9 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
     /// @dev approximate overhead of calling the meterGas method
     int256 constant CONSUME_CALL_OVERHEAD = 275;
     /// @dev approximate overhead of running a test that touches the pause/resume cheatcodes
-    /// todo: maybe cost of checking failed storage slots?
+    /// todo: maybe cost of checking failed storage slots? debugger seems to
+    /// exit immediately after modifier calls cheatcode to resume gas metering,
+    /// however
     int256 constant MYSTERY_TEST_OVERHEAD = 4103; //4147;
     /// @dev convenience constant of all additional overhead
     int256 constant ALL_OVERHEAD =
@@ -55,6 +57,8 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
     Vm private constant vm = Vm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
 
     /// @dev When true, log more granular information about makeup gas
+    /// todo: consider making an enum for even more verbose logging for
+    /// debugging purposes
     bool verboseMetering;
 
     constructor(
