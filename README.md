@@ -7,8 +7,8 @@
 Forge's native gas metering is inaccurate in the following scenarios (see [this issue](https://github.com/foundry-rs/foundry/issues/6590) for more context):
 
 - Solidity function dispatch overhead can lead to [misleading numbers](https://github.com/foundry-rs/foundry/issues/6164) when comparing tests for different (eg, pure) functions
-- Forge technically underreports actual gas usage by [omitting call and calldata overhead](https://github.com/foundry-rs/foundry/issues/6578)
-- But EVM storage refunds incurred as part of execution are [credited against total measured gas usage](https://github.com/foundry-rs/foundry/issues/6578)
+- Forge technically underreports actual gas usage by [omitting call and calldata overhead](https://github.com/foundry-rs/foundry/issues/6578)...
+- .. but EVM storage refunds incurred as part of execution are [credited against total measured gas usage](https://github.com/foundry-rs/foundry/issues/6578)
 - Accounts and slots warmed by test setup remain warm when executing target functions, and there is [no reliable way to forcibly mark accounts and slots as "cold."](https://github.com/foundry-rs/foundry/pull/5852#issuecomment-1736207581) This means that even when manually metering gas using `vm.pause/resumeGasMetering` cheatcodes, gas is underreported
 - Calls within Forge's test context do not incur calldata costs
 - No support for [Access Lists](https://eips.ethereum.org/EIPS/eip-2930)
