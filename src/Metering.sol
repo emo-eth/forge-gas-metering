@@ -47,7 +47,9 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
     /// @dev selector to call the vm.startStateDiffRecording cheatcode in assembly (to avoid solidity EXTCODSIZE checks)
     uint256 constant START_STATE_DIFF = 0xcf22e3c9;
     /// @dev selector to call the vm.prank cheatcode in assembly
-    uint256 constant PRANK_SELECTOR = 0xca669fa7;
+    uint256 constant START_PRANK_SELECTOR = 0x06447d56;
+    /// @dev selector to call the vm.expectRevert cheatcode in assembly
+    uint256 constant EXPECT_REVERT_SELECTOR = 0xf4844814;
     /// @dev convenience constant to access the HEVM address in assembly
     uint256 constant VM = 0x007109709ecfa91a80626ff3989d68f67f5b1dd12d;
     Vm private constant vm = Vm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
@@ -135,10 +137,11 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
         bytes memory callData,
         uint256 value,
         bool transaction,
+        bool expectRevert,
         string memory message
     ) internal returns (uint256, bytes memory) {
         (uint256 gasUsed, bytes memory data) =
-            meterCall(from, to, callData, value, transaction);
+            meterCall(from, to, callData, value, transaction, expectRevert);
         console2.log(string.concat(message, " gas used"), gasUsed);
         return (gasUsed, data);
     }
@@ -157,12 +160,9 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
         address to,
         bytes memory callData,
         uint256 value,
-        bool transaction
+        bool transaction,
+        bool expectRevert
     ) internal returns (uint256, bytes memory) {
-        // Calculate static overhead of the call
-        uint256 overheadGasCost =
-            (transaction) ? getCallOverhead(to, callData) : 0;
-
         Vm.AccountAccess[] memory diffs = vm.stopAndReturnStateDiff();
         preprocessAccountAccesses(diffs);
         // track evm gas usage
@@ -177,9 +177,13 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
             pop(call(gas(), VM, 0, 0x1c, 4, 0, 0))
             let startingGas := gas()
             if iszero(iszero(from)) {
-                mstore(0, PRANK_SELECTOR)
+                mstore(0, START_PRANK_SELECTOR)
                 mstore(0x20, from)
                 pop(call(gas(), VM, 0, 0x1c, 0x24, 0, 0))
+            }
+            if expectRevert {
+                mstore(0, EXPECT_REVERT_SELECTOR)
+                pop(call(gas(), VM, 0, 0x1c, 4, 0, 0))
             }
             let succ :=
                 call(gas(), to, value, add(callData, 0x20), mload(callData), 0, 0)
@@ -202,6 +206,10 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
 
         diffs = vm.stopAndReturnStateDiff();
         GasMeasurements memory measurements = processAccountAccesses(to, diffs);
+
+        // Calculate static overhead of the call
+        uint256 overheadGasCost =
+            (transaction) ? getCallOverhead(to, callData) : 0;
         (uint256 makeup, uint256 finalRefund) = calcGasToBurn(
             int256(overheadGasCost),
             int256(observedGas) - METER_OVERHEAD,

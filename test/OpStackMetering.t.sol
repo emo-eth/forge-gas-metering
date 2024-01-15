@@ -25,11 +25,12 @@ contract OpStackMeteringTest is OpStackMetering, Test {
             callData: hex"000001",
             value: 0,
             transaction: true,
+            expectRevert: false,
             message: "manual"
         });
     }
 
-    function testMeteringRealWorldErc20() public manuallyMetered {
+    function testMeteringRealWorldErc20Op() public manuallyMetered {
         address alice = makeAddr("alice");
         address bob = makeAddr("bob");
         token1.deal(alice, 100);
@@ -45,6 +46,7 @@ contract OpStackMeteringTest is OpStackMetering, Test {
             callData: callData,
             value: 0,
             transaction: true,
+            expectRevert: false,
             message: "spend"
         });
     }

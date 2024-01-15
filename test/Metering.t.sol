@@ -47,11 +47,12 @@ contract MeteringTest is MainnetMetering, Test {
             callData: hex"000001",
             value: 0,
             transaction: true,
+            expectRevert: false,
             message: "manual"
         });
     }
 
-    function testMeteringRealWorldErc20() public manuallyMetered {
+    function testMeteringRealWorldErc20M() public manuallyMetered {
         address alice = makeAddr("alice");
         address bob = makeAddr("bob");
         token1.deal(alice, 100);
@@ -67,6 +68,7 @@ contract MeteringTest is MainnetMetering, Test {
             callData: callData,
             value: 0,
             transaction: true,
+            expectRevert: false,
             message: "spend"
         });
     }
@@ -91,6 +93,7 @@ contract MeteringTest is MainnetMetering, Test {
             value: 0,
             callData: abi.encodeCall(Writer.read, (bytes32(0))),
             transaction: true,
+            expectRevert: false,
             message: "Writer.read"
         });
     }

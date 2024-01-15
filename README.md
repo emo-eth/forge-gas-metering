@@ -45,10 +45,12 @@ contract MeteringTest is MainnetMetering, Test {
 
     function testManualMetering() public manuallyMetered {
         meterCallAndLog({
+            from: address(0), // equivalent to address(this)
             to: address(0x123456),
             callData: hex"000001",
             value: 0,
             transaction: true,
+            expectRevert: false,
             message: "myFunction"
         });
     }
