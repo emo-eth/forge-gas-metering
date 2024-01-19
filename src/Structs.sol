@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.14;
 
+struct MeterCallArgs {
+    address from;
+    address to;
+    bytes callData;
+    uint256 value;
+    bool transaction;
+    bool expectRevert;
+    string message;
+}
+
 struct AccessListEntry {
     address account;
     bytes32[] storageKeys;

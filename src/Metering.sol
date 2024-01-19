@@ -6,7 +6,8 @@ import {
     AccessListEntry,
     TransactionData,
     AccessCosts,
-    GasMeasurements
+    GasMeasurements,
+    MeterCallArgs
 } from "./Structs.sol";
 import {Vm} from "forge-std/Test.sol";
 import {TransactionOverheadUtils} from "./TransactionOverheadUtils.sol";
@@ -151,6 +152,29 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
     }
 
     /**
+     * @notice Calculate transaction-level overhead and record gas used by evm
+     *         during call, passing in a struct of arguments.
+     * @param args Struct containing all arguments to meterCallAndLog
+     * @param message A message to prepend to the logged gas usage
+     * @return calculated adjusted gas used
+     * @return return data from call
+     */
+    function meterCallAndLog(MeterCallArgs memory args, string memory message)
+        internal
+        returns (uint256, bytes memory)
+    {
+        return meterCallAndLog(
+            args.from,
+            args.to,
+            args.callData,
+            args.value,
+            args.transaction,
+            args.expectRevert,
+            message
+        );
+    }
+
+    /**
      * @notice Calculate transaction-level overhead and record gas used by evm during call.
      *         Explicitly consume the gas cost of the call plus the static overhead when `transaction` is true.
      *         Assumes paused gas metering.
@@ -243,5 +267,26 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
         }
         consumeAndMeterGas(makeup);
         return (uint256(targetGas), data);
+    }
+
+    /**
+     * @notice Calculate transaction-level overhead and record gas used by evm
+     *         during call, passing in a struct of arguments.
+     * @param args Struct containing all arguments to meterCall
+     * @return calculated adjusted gas used
+     * @return return data from call
+     */
+    function meterCall(MeterCallArgs memory args)
+        internal
+        returns (uint256, bytes memory)
+    {
+        return meterCall(
+            args.from,
+            args.to,
+            args.callData,
+            args.value,
+            args.transaction,
+            args.expectRevert
+        );
     }
 }
