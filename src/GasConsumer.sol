@@ -34,7 +34,6 @@ contract GasConsumer {
      * @param amount The amount of gas to consume, += 33 depending on compiler
      *               settings
      */
-
     function consumeGas(uint256 amount) internal view {
         address invalidAddress = INVALID_ADDRESS;
         assembly ("memory-safe") {

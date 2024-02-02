@@ -49,8 +49,8 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
     uint256 constant RESUME_GAS_METERING = 0x2bcd50e0;
     /// @dev selector to call the vm.startStateDiffRecording cheatcode in assembly (to avoid solidity EXTCODSIZE checks)
     uint256 constant START_STATE_DIFF = 0xcf22e3c9;
-    /// @dev selector to call the vm.prank cheatcode in assembly
-    uint256 constant START_PRANK_SELECTOR = 0x06447d56;
+    /// @dev selector to call the vm.prank cheatcode in assembly, `bytes4(keccak256(bytes("prank(address)")))`
+    uint256 constant PRANK_SELECTOR = 0xca669fa7;
     /// @dev selector to call the vm.expectRevert cheatcode in assembly
     uint256 constant EXPECT_REVERT_SELECTOR = 0xf4844814;
     /// @dev convenience constant to access the HEVM address in assembly
@@ -205,7 +205,7 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
             pop(call(gas(), VM, 0, 0x1c, 4, 0, 0))
             let startingGas := gas()
             if iszero(iszero(from)) {
-                mstore(0, START_PRANK_SELECTOR)
+                mstore(0, PRANK_SELECTOR)
                 mstore(0x20, from)
                 pop(call(gas(), VM, 0, 0x1c, 0x24, 0, 0))
             }
