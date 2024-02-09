@@ -49,8 +49,10 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
     uint256 constant RESUME_GAS_METERING = 0x2bcd50e0;
     /// @dev selector to call the vm.startStateDiffRecording cheatcode in assembly (to avoid solidity EXTCODSIZE checks)
     uint256 constant START_STATE_DIFF = 0xcf22e3c9;
-    /// @dev selector to call the vm.prank cheatcode in assembly
+    /// @dev selector to call the vm.startPrank cheatcode in assembly
     uint256 constant START_PRANK_SELECTOR = 0x06447d56;
+    /// @dev selector to call the vm.stopPrank cheatcode in assembly
+    uint256 constant STOP_PRANK_SELECTOR = 0x90c5013b;
     /// @dev selector to call the vm.expectRevert cheatcode in assembly
     uint256 constant EXPECT_REVERT_SELECTOR = 0xf4844814;
     /// @dev convenience constant to access the HEVM address in assembly
@@ -204,6 +206,8 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
             mstore(0, RESUME_GAS_METERING)
             pop(call(gas(), VM, 0, 0x1c, 4, 0, 0))
             let startingGas := gas()
+            // use startPrank before expect revert because it doesn't matter what address calls expectRevert,
+            // and calling expectRevert before startPrank will cause the call to revert
             if iszero(iszero(from)) {
                 mstore(0, START_PRANK_SELECTOR)
                 mstore(0x20, from)
@@ -216,8 +220,13 @@ contract Metering is TransactionOverheadUtils, GasConsumer {
             let succ :=
                 call(gas(), to, value, add(callData, 0x20), mload(callData), 0, 0)
             let afterGas := gas()
+            // pause gas metering before ending prank if active
             mstore(0, PAUSE_GAS_METERING)
             pop(call(gas(), VM, 0, 0x1c, 4, 0, 0))
+            if iszero(iszero(from)) {
+                mstore(0, STOP_PRANK_SELECTOR)
+                pop(call(gas(), VM, 0, 0x1c, 4, 0, 0))
+            }
             observedGas := sub(startingGas, afterGas)
 
             if iszero(succ) {
